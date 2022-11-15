@@ -8,16 +8,16 @@ from itertools import combinations_with_replacement
 
 class MLP:
 
-    def __init__(self, data, nodes, step_size=0.001, momentum=0.5, epochs = 500):
+    def __init__(self, data, nodes, weights = None, step_size=0.001, momentum=0.5):
         self.data = pd.read_csv("Data/" + data, index_col=0, header=0)  # initializes entire dataset to dataframe
         self.name = data
         self.samples = ds.getSamples(data)  # gets split data
         self.train = pd.concat(self.samples[:9])  # creates training data
         self.test = self.samples[9]  # creates test data
+        self.weights = weights
         self.step_size = step_size  # initilizes step size
         self.momentum = momentum  # initializes momentum
         self.bias = 1
-        self.epochs = epochs  # how many epochs to train for
 
 
         #self.data = pd.DataFrame(np.array([[0,0,0],[0,1,1],[1,0,1],[1,1,0]]))
@@ -43,24 +43,23 @@ class MLP:
         # initializes 3 dim array of weights either -0.01, or 0.01. Can be jagged
         # [input layer (input x nodes), [hidden nodes (prev layer x current x layers)], output layer (nodes x output)]
 
-        if nodes[0] == 0:  # case for no hidden layers
-            self.weights = [np.random.uniform(-0.01, 1/(self.input+self.output), size=(self.input, self.output))]
-            self.bweights = [np.random.uniform(-0.01, 0.01, size=(1, self.output))]
-        else: # case for one or more hidden layers
-            self.weights = [np.random.uniform(0,1/(self.input+self.nodes[0]), size=(self.input, self.nodes[0]))]  # first hidden layer
-            [self.weights.append(np.random.uniform(0,1/(self.nodes[i]+self.nodes[i+1]), size=(self.nodes[i],self.nodes[i+1]))) for i in range(len(self.nodes)-1)],
-            self.weights.append(np.random.uniform(0,1/(self.nodes[-1]+self.output), size=(self.nodes[-1], self.output)))  # output layer
+        if not self.weights:
 
-            # bias nodes adds a node for every layer that has no inputs, insures activation of sigmoids
-            self.bweights = [np.random.uniform(-0.01, 0.01, size=(1, self.nodes[i])) for i in range(len(self.nodes))]
-            self.bweights.append(np.random.uniform(-0.01, 0.01, size=(1, self.output)))
+            if nodes[0] == 0:  # case for no hidden layers
+                self.weights = [np.random.uniform(-0.01, 1/(self.input+self.output), size=(self.input, self.output))]
+                self.bweights = [np.random.uniform(-0.01, 0.01, size=(1, self.output))]
+            else: # case for one or more hidden layers
+                self.weights = [np.random.uniform(0,1/(self.input+self.nodes[0]), size=(self.input, self.nodes[0]))]  # first hidden layer
+                [self.weights.append(np.random.uniform(0,1/(self.nodes[i]+self.nodes[i+1]), size=(self.nodes[i],self.nodes[i+1]))) for i in range(len(self.nodes)-1)],
+                self.weights.append(np.random.uniform(0,1/(self.nodes[-1]+self.output), size=(self.nodes[-1], self.output)))  # output layer
+
+                # bias nodes adds a node for every layer that has no inputs, insures activation of sigmoids
+                self.bweights = [np.random.uniform(-0.01, 0.01, size=(1, self.nodes[i])) for i in range(len(self.nodes))]
+                self.bweights.append(np.random.uniform(-0.01, 0.01, size=(1, self.output)))
 
         self.deltas = [np.zeros_like(i) for i in self.weights]  # empty set for deltas/gradients of prev back prop
 
         # make copies of original state of MLP for cross-validation
-        self.weightsCopy = self.weights.copy()
-        self.bweightsCopy = self.bweights.copy()
-        self.deltasCopy = self.deltas.copy()
 
     # train
     # ------
@@ -70,88 +69,35 @@ class MLP:
         # creating training set
         trainV = self.train.to_numpy()  # initializes dataframe to numpy
 
-        # helper variables for calculating convergence
-        performance = [0]
-        converged = False
-        in_row = 0
-
-        times = [0]
-
-        # for live graph
-        if Graph:
-            plt.ion()
-            graph = plt.plot(times, performance)[0]
-            plt.xlim([0, 1000])
-            if self.classification:
-                plt.ylim([0, 1])
-            else:
-                plt.ylim([0, 100])
-
         # while training on the training set still improves by some amount (can change later)
-        while not converged:
-            np.random.shuffle(trainV)  # shuffles training data
-            last_performance = performance[-1]  # sets previous epoch performance
+        np.random.shuffle(trainV)  # shuffles training data
 
-            # actual and predicted vectors to calculate F1 scores or MSE
-            actual = []
-            prediction = []
+        # actual and predicted vectors to calculate F1 scores or MSE
+        actual = []
+        prediction = []
 
-            # iterating through each element in the training set
-            for x in trainV:
+        # iterating through each element in the training set
+        for x in trainV:
+            t = x[-1]  # sets target output
+            x = x[:-1]  # drops class catagory
+            actual = np.append(actual, t)  # adds target to actual
 
-                t = x[-1]  # sets target output
-                x = x[:-1]  # drops class catagory
-                actual = np.append(actual, t)  # adds target to actual
+            # gets result from output nodes
+            A = self.feedForward(x)
+            O = A[-1][-1]  # sets output
+            #print("actual",t,"\npredicted",O)
 
-                # gets result from output nodes
-                A = self.feedForward(x)
-                O = A[-1][-1]  # sets output
-                #print("actual",t,"\npredicted",O)
+            if self.output > 1:  # multi-classification takes the index of the largest output of softmax
+                O = self.classes[np.argmax(O)]
+            elif self.classification:  # binary classification rounds to index either 0 or 1 of classes
+                O = self.classes[int(O.round()[0])]
+            # regression is just the output
 
-                if self.output > 1:  # multi-classification takes the index of the largest output of softmax
-                    O = self.classes[np.argmax(O)]
-                elif self.classification:  # binary classification rounds to index either 0 or 1 of classes
-                    O = self.classes[int(O.round()[0])]
-                # regression is just the output
+            prediction = np.append(prediction, O)  # adds prediction to list
 
-                if video and not self.classification:  # for video
-                    print("input:",x,"\nFirst layer weighted input:", A[1][0],"\nFirst layer activations with tanh:",
-                          A[1][1],"\nSecond layer weighted input:", A[2][0], "\nSecond layer activation with tanh", A[2][1],
-                          "\nWeighted input to output layer:", A[-1][0], "\nFinal layer output:", A[-1][-1])
-                    converged = True
-                    break
+        performance = self.performance(prediction, actual)  # adds epoch performance to list
 
-                prediction = np.append(prediction, O)  # adds prediction to list
-
-                self.backPropogate(A, t, gradient)  # backprogation
-                if gradient:  # for video
-                    converged = True
-                    break
-
-            performance.append(self.performance(prediction, actual))  # adds epoch performance to list
-            # self.Test()
-            # convergence criteria: performance within 0.01 5 times in a row or 1000 epochs
-            if abs(last_performance - performance[-1]) < last_performance*0.01:   # not used
-                #in_row += 1
-                if in_row == 5: converged = True
-            else:
-                in_row = 0
-
-            times.append(times[-1] + 1)
-            if Graph:  # live graph
-                graph.set_xdata(times)
-                graph.set_ydata(performance)
-                plt.xlim([0, times[-1]+1])
-                plt.draw()
-                plt.pause(0.001)
-
-            if len(times) >= self.epochs:  # to see if we have reached epoch amount
-                converged = True
-                #print("train:",performance[-1])
-        if history:  # for convergence experiment
-            return np.array(performance)
-
-        return performance[-1]
+        return performance
 
     def feedForward(self, x):
 
@@ -200,120 +146,6 @@ class MLP:
     def softMax(self, o):
         val = np.exp(o)/np.sum(np.exp(o))
         return val
-
-    # backPropogate
-    #-------------------
-    # using gradient descent calculates error and adjusts weights in the NN
-
-
-    def backPropogate(self, A, t, gradient=False):
-        a = list(A)  # local copy of outputs for debugging because of popping
-        deltas = [np.zeros_like(i) for i in self.weights]  # initialize deltas/gradients
-        errors = []  # empty list to store errors of each node/layer
-        o = A.pop()  # sets the output of the prev iteration
-        yV = o[-1]  # sets prediction as last output, needs rounded for binary classification
-
-        if self.output > 2:  # multiple classes
-
-            rV = np.zeros(self.output) # establishing ground truth vector
-            rV[np.where(self.classes == t)] = 1  # creates one dim one hot encoded ground truth vector
-            outputError = (rV - yV)  # gets distance for each class
-            if gradient: # for video
-                print("calculation is (Truth value vector - softmax output vector) * inputs to the output layer * stepsize")
-                print(rV, "-",yV, "*", A[-1][-1], "*", self.step_size, '=' )
-        elif self.classification:  # 2 classes
-            rV = int(np.where(self.classes == t)[0])  # gets index of actual prediction
-            yV = yV[-1].round()  # rounds to 0 or 1 from tanh output
-            outputError = (rV - yV)*(1-np.tanh(o[0])**2)  # calculates error using derivative of hyperbolic tan
-        else:  # regression
-            rV = t # actual is a single number
-            if gradient: # for video
-                print("calculation is (actual regression value - sum of weighted inputs to final node) * inputs to the output layer * stepsize")
-                print(rV, "-", yV, "*", A[-1][-1], "*", self.step_size, '=')
-            outputError = rV - yV[0][0] # error is actual - predicted
-
-        errors.append(outputError)  # adds error to list of errors
-
-        #print("Actual:",rV,"\nPrediction:",yV)
-
-        o = A[-1]  # sets input to the node
-        outputD = np.outer(o[-1],outputError) * self.step_size  # sets delta for the output layer using input to the output layer
-        deltas[-1] = (outputD)  # adds delta of output layer to delta list
-        if gradient: # for video
-            print(outputD)
-        deltas.reverse()  # backpropagation, so reversed the list
-        weights = self.weights  # local copy of weights
-
-        for i in range(len(deltas) - 1):  # finding deltas for each layer
-            o = A.pop()  # sets next output
-            error = (1 - np.tanh(o[0])**2) * np.dot(errors[-1],weights[-i-1].T)  # gets error using derivative of
-            # tanh derivative and back propagated error
-            inputs = A[-1]  # sets input to the weight matrix, prev node output
-            if len(A) == 1:
-                deltas[i + 1] = np.outer(inputs,error) * self.step_size # saves delta to list of deltas
-            else:
-                deltas[i + 1] = np.outer(inputs[-1], error) * self.step_size
-            errors.append(error)  # adds the error to errors
-
-        errors.reverse()
-        deltas.reverse()  # resets orientations
-        if gradient:  # video
-            temp = [i+self.deltas[idx] for idx, i in enumerate(self.weights)]
-            print("\nWeight updates are previous layer weights + gradient of that layer")
-            print("Previous weights:\n", self.weights, "\nWeight updates:\n", deltas, "\nNew Weights:\n", temp)
-
-        # updates all the deltas/gradients and weights
-        self.deltas = [i*self.momentum+deltas[idx] for idx, i in enumerate(self.deltas)]
-        self.weights = [i+self.deltas[idx] for idx, i in enumerate(self.weights)]
-        self.bweights = [i+(self.step_size*errors[idx]) for idx, i in enumerate(self.bweights)]
-
-    def Test(self):
-        actual = []  # for performance metrics
-        prediction = []
-        testV = self.test.to_numpy()  # init test data to numpy
-        for x in testV:  # going through each test vector
-            t = x[-1]  # sets target output
-            x = x[:-1]  # drops class catagory
-            actual.append(t)
-            A = self.feedForward(x)  # feedsforward test vector
-            y = A[-1][0]  # sets output of feed forward
-            if self.classification:  # finds predicition
-                if self.output > 2:
-                    y = A[-1][-1]
-                    prediction.append(self.classes[np.argmax(y)])  # softmax
-                else:
-                    y = A[-1][-1]
-                    prediction.append(self.classes[int(y.round().item())])  # binary classification
-            else:
-                prediction.append(round(y[0][0],1))  # regression
-        #print('Predictions:',prediction)
-        #print('Actual:     ',actual)
-        performance = self.performance(prediction, actual)  # gets performance for test set
-        #print("Test:",performance)
-        return performance
-
-    # CrossValidate
-    # ---------------
-    # performs cross validation, resets weights and rotates train test data
-
-    def crossValidate(self, times=10, history=False):
-        metric_vec = np.zeros(times)  # stores result for each fold
-        timeseries = np.zeros(self.epochs)  # for convergence experiment
-        for i in range(times):  # going throught amount of folds
-            #print('Fold',i)
-            #reset MLP to original state
-            self.weights = self.weightsCopy  # reinit beginning parameters
-            self.bweights = self.bweightsCopy
-            self.deltas = self.deltasCopy
-
-            timeseries += self.Train(history=history)  # trains data
-            metric_vec[i] = self.Test()  # adds test result to result array
-            self.samples.append(self.samples.pop(0))  # rotation of folds
-            self.train = pd.concat(self.samples[0:9])
-            self.test = self.samples[9]
-        if history:  # convergence experiment
-            return timeseries / times
-        return metric_vec.mean()
 
     # performance
     # -----------------

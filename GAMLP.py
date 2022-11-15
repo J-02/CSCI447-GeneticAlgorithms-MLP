@@ -5,23 +5,26 @@ import random
 
 class GAModel:
     #initializes with a population of solutions, a probability of crossover, a probability of mutation, and a mutation SD
-    def __init__(self, solutionPopulation = [], probOfCrossover = .1, probOfMutation = .05, mutationSD = .01):
+    def __init__(self, data, nodes, step_size=.001, momentum=.5, solutionPopulation = [], probOfCrossover = .1, probOfMutation = .05, mutationSD = .01):
         self.solutionPopulation = solutionPopulation
         self.populationSize = len(solutionPopulation)
         self.populationFitnesses = []
         self.probOfCrossover = probOfCrossover
         self.probOfMutation = probOfMutation
         self.mutationSD = mutationSD
+        self.data = data
+        self.nodes = nodes
+        self.step_size = step_size
+        self.momentum = momentum
         for model in self.solutionPopulation:
-            # calculate fitnesses of all models in population
-            MLP_model = MLP(weights = model)
+            # calculate fitnesses of all models in the solution population
+            MLP_model = MLP(self.data, self.nodes, model, self.step_size, self.momentum)
             self.populationFitnesses.append(MLP_model.Train())
 
     #training function, iterates through generations until the best model in a given generation doesn't improve sufficiently
     #from previous generation
     def Train(self):
         converged = False
-        maxSolutionFitness = 0
         lastBestFitness = 0
         generations = 0
         timesWithoutChange = 0
@@ -54,8 +57,8 @@ class GAModel:
                 newSolutionPopulation.append(child2)
 
                 #add children performances to the "next generation"
-                newPopulationFitnesses.append(MLP(weights=child1).Train())
-                newPopulationFitnesses.append(MLP(weights=child2).Train())
+                newPopulationFitnesses.append(MLP(self.data, self.nodes, child1, self.step_size, self.momentum).Train())
+                newPopulationFitnesses.append(MLP(self.data, self.nodes, child2, self.step_size, self.momentum).Train())
 
             #set the current generation population to the newly generated population of children
             self.solutionPopulation.append(newSolutionPopulation)
@@ -77,7 +80,7 @@ class GAModel:
 
         return bestSolution, maxSolutionFitness
 
-    #select 2 parents to reproduce and create 2 children
+    #select 2 parents to reproduce and create 2 children (using fitness-proportionate)
     def selectParents(self):
         #sum up all fitnesses across entire solution population
         fitnessSum = np.sum(self.populationFitnesses)
@@ -94,8 +97,8 @@ class GAModel:
 
         #need to flatten weight matrices into 1d arrays to get into "chromosome" form
         #not sure syntactically the best way to do this, can think of some shitty ways though
-        parentChromosome1 = np.flatten(parent1.weights)
-        parentChromosome2 = np.flatten(parent2.weights)
+        parentChromosome1 = parent1
+        parentChromosome2 = parent2
 
         childChromosome1 = parentChromosome1
         childChromosome2 = parentChromosome2
@@ -141,5 +144,7 @@ class GAModel:
         mutatedSolution = chromosome
 
         return mutatedSolution
+
+test = GAModel()
 
 
