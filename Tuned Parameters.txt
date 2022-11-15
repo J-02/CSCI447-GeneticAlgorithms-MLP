@@ -1,0 +1,29 @@
+0 Layers
+
+Glass: 0.01 step size, 0 momentum (1.0)
+Soybean:
+Wisconsin:
+
+Machine:
+Abalone:
+ForestFires:
+
+1 Layer
+
+Glass: 9 nodes, 0.6 step size, 0 momentum (0.889702127)
+Soybean: 4 nodes, 0.01 step size, 0 momentum (1.0)
+Wisconsin: 8 nodes, 1 step size, 0 momentum (0.96788847)
+
+Machine:
+Abalone:
+ForestFires:
+
+2 Layers
+
+Glass: 8 and 7 nodes, 0.3 step size, 0 momentum (0.820833993)
+Soybean: 4 and 4 nodes, 0.01 step size, 0 momentum (1.0)
+Wisconsin:
+
+Machine:
+Abalone:
+ForestFires:
