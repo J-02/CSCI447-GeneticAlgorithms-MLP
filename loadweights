@@ -1,5 +1,5 @@
-container = np.load('Weights/'+self.name+"weights"+'.npz')
+container = np.load('Weights/'+self.name+"weights"+"(number of nodes)"+'.npz')
 weights = [container[key] for key in container]
 
-container = np.load('Weights/'+self.name+"bweights"+'.npz')
+container = np.load('Weights/'+self.name+"bweights"+"(number of nodes)"+'.npz')
 bweights = [container[key] for key in container]
