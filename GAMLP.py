@@ -18,7 +18,7 @@ class GAModel:
         self.momentum = momentum
         for model in self.solutionPopulation:
             # calculate fitnesses of all models in the solution population
-            MLP_model = MLP(self.data, self.nodes, model, self.step_size, self.momentum)
+            MLP_model = MLP(self.data, self.nodes, None, self.step_size, self.momentum)
             self.populationFitnesses.append(MLP_model.Train())
 
     #training function, iterates through generations until the best model in a given generation doesn't improve sufficiently
@@ -29,6 +29,7 @@ class GAModel:
         generations = 0
         timesWithoutChange = 0
         while not converged:
+            print('Generation',generations+1)
             newSolutionPopulation = []
             newPopulationFitnesses = []
             #performs n/5 reproductions, will probably need to figure out how to decide this later
@@ -77,18 +78,27 @@ class GAModel:
                 if timesWithoutChange == 10: converged = True
             else: timesWithoutChange = 0
             lastBestFitness = maxSolutionFitness
+            print('This generation best fitness: ', maxSolutionFitness)
 
         return bestSolution, maxSolutionFitness
 
-    #select 2 parents to reproduce and create 2 children (using fitness-proportionate)
+    #select 2 parents to reproduce and create 2 children
     def selectParents(self):
+        # fitness proportionate
         #sum up all fitnesses across entire solution population
         fitnessSum = np.sum(self.populationFitnesses)
-
         #calcuate probabilities of each solution being selected for reproduction
         selectionProbabilities = self.populationFitnesses/fitnessSum
 
-        #choosing 2 parents based on probabilities
+        #rank proportionate
+        #sum up all ranks across entire solution population
+        #rankSum = np.sum(range(self.populationSize+1))
+        #find ranks of all models in population
+        #sortedRanks = np.argsort(self.populationFitnesses)
+        #define selection probabilities by these ranks
+        #selectionProbabilities = sortedRanks+1/rankSum
+
+        # choosing 2 parents based on probabilities
         parent1, parent2 = np.random.choice(range(self.populationSize), size=2, p=selectionProbabilities)
         return parent1, parent2
 
@@ -145,6 +155,15 @@ class GAModel:
 
         return mutatedSolution
 
-test = GAModel()
+
+
+
+population = []
+for i in range(10):
+    nextMLP = MLP('glass.data', [9])
+    population.append(nextMLP.getWeights())
+
+test = GAModel('glass.data', [9], solutionPopulation=population)
+test.Train()
 
 
