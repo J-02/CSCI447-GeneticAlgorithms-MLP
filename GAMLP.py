@@ -117,10 +117,8 @@ class GAModel:
         # swap the genes from the two parents in the children with some fixed probability
         #iterate through all genes in the chromosomes
         crossoverBinaries = np.random.choice([0,1],p=[1-self.probOfCrossover,self.probOfCrossover], size=len(parentChromosome1))
-        for i in range(len(parentChromosome1)):
-            if crossoverBinaries[i] == 1:
-                childChromosome1[i] = parentChromosome2[i]
-                childChromosome2[i] = parentChromosome1[i]
+        childChromosome1 = np.choose(crossoverBinaries, [parentChromosome1, parentChromosome2])
+        childChromosome2 = np.choose(crossoverBinaries, [parentChromosome2, parentChromosome1])
 
         #one point crossover
         #crossoverPoint = random.randint(0, len(parentChromosome1))
@@ -155,6 +153,18 @@ class GAModel:
         return mutatedSolution
 
 
+def crossover(array):
+    xover = np.random.choice([0, 1], p=[0.9,0.1], size=(array.shape[0]//2, array.shape[1], array.shape[2]))
+    xover2 = (~xover.astype(bool)).astype(int)
+    children1 = np.array([np.choose(xover[i],array[i::5]) for i in range(5)])
+    children2 = np.array([np.choose(xover2[i],array[i::5]) for i in range(5)])
+    children = np.vstack([children1,children2])
+    return children
 
 
+container = np.load('Weights/'+"machine/"+"2/"+'weights.npz')
+weights = [container[key] for key in container]
 
+
+# crossover
+weights = [crossover(i) for i in weights]
