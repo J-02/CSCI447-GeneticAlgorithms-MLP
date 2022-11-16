@@ -8,9 +8,9 @@ from itertools import combinations_with_replacement
 
 class MLP:
 
-    def __init__(self, data, nodes, weights = None, step_size=0.001, momentum=0.5):
+    def __init__(self, data, nodes, step_size=0.001, momentum=0.5, epochs = 500, weights = None):
         self.data = pd.read_csv("Data/" + data, index_col=0, header=0)  # initializes entire dataset to dataframe
-        self.name = data
+        self.name = data[:-5]
         self.samples = ds.getSamples(data)  # gets split data
         self.train = pd.concat(self.samples[:9])  # creates training data
         self.test = self.samples[9]  # creates test data
@@ -18,6 +18,7 @@ class MLP:
         self.step_size = step_size  # initilizes step size
         self.momentum = momentum  # initializes momentum
         self.bias = 1
+        self.epochs = epochs
 
 
         #self.data = pd.DataFrame(np.array([[0,0,0],[0,1,1],[1,0,1],[1,1,0]]))
@@ -43,18 +44,18 @@ class MLP:
         # initializes 3 dim array of weights either -0.01, or 0.01. Can be jagged
         # [input layer (input x nodes), [hidden nodes (prev layer x current x layers)], output layer (nodes x output)]
 
-        if not self.weights:
-            if nodes[0] == 0:  # case for no hidden layers
-                self.weights = [np.random.uniform(-0.01, 1/(self.input+self.output), size=(self.input, self.output))]
-                self.bweights = [np.random.uniform(-0.01, 0.01, size=(1, self.output))]
-            else: # case for one or more hidden layers
-                self.weights = [np.random.uniform(0,1/(self.input+self.nodes[0]), size=(self.input, self.nodes[0]))]  # first hidden layer
-                [self.weights.append(np.random.uniform(0,1/(self.nodes[i]+self.nodes[i+1]), size=(self.nodes[i],self.nodes[i+1]))) for i in range(len(self.nodes)-1)],
-                self.weights.append(np.random.uniform(0,1/(self.nodes[-1]+self.output), size=(self.nodes[-1], self.output)))  # output layer
+
+        if len(nodes) == 0 or nodes[0] == 0:  # case for no hidden layers
+            self.weights = [np.random.uniform(-0.01, 1/(self.input+self.output), size=(self.input, self.output))]
+            self.bweights = [np.random.uniform(-0.01, 0.01, size=(1, self.output))]
+        else: # case for one or more hidden layers
+            self.weights = [np.random.uniform(0,1/(self.input+self.nodes[0]), size=(self.input, self.nodes[0]))]  # first hidden layer
+            [self.weights.append(np.random.uniform(0,1/(self.nodes[i]+self.nodes[i+1]), size=(self.nodes[i],self.nodes[i+1]))) for i in range(len(self.nodes)-1)],
+            self.weights.append(np.random.uniform(0,1/(self.nodes[-1]+self.output), size=(self.nodes[-1], self.output)))  # output layer
 
                 # bias nodes adds a node for every layer that has no inputs, insures activation of sigmoids
-                self.bweights = [np.random.uniform(-0.01, 0.01, size=(1, self.nodes[i])) for i in range(len(self.nodes))]
-                self.bweights.append(np.random.uniform(-0.01, 0.01, size=(1, self.output)))
+            self.bweights = [np.random.uniform(-0.01, 0.01, size=(1, self.nodes[i])) for i in range(len(self.nodes))]
+            self.bweights.append(np.random.uniform(-0.01, 0.01, size=(1, self.output)))
 
         self.deltas = [np.zeros_like(i) for i in self.weights]  # empty set for deltas/gradients of prev back prop
 
@@ -167,72 +168,6 @@ class MLP:
         val = np.exp(o)/np.sum(np.exp(o))
         return val
 
-    # backPropogate
-    #-------------------
-    # using gradient descent calculates error and adjusts weights in the NN
-
-
-    def backPropogate(self, A, t, gradient=False):
-        a = list(A)  # local copy of outputs for debugging because of popping
-        deltas = [np.zeros_like(i) for i in self.weights]  # initialize deltas/gradients
-        errors = []  # empty list to store errors of each node/layer
-        o = A.pop()  # sets the output of the prev iteration
-        yV = o[-1]  # sets prediction as last output, needs rounded for binary classification
-
-        if self.output > 2:  # multiple classes
-
-            rV = np.zeros(self.output) # establishing ground truth vector
-            rV[np.where(self.classes == t)] = 1  # creates one dim one hot encoded ground truth vector
-            outputError = (rV - yV)  # gets distance for each class
-            if gradient: # for video
-                print("calculation is (Truth value vector - softmax output vector) * inputs to the output layer * stepsize")
-                print(rV, "-",yV, "*", A[-1][-1], "*", self.step_size, '=' )
-        elif self.classification:  # 2 classes
-            rV = int(np.where(self.classes == t)[0])  # gets index of actual prediction
-            yV = yV[-1].round()  # rounds to 0 or 1 from tanh output
-            outputError = (rV - yV)*(1-np.tanh(o[0])**2)  # calculates error using derivative of hyperbolic tan
-        else:  # regression
-            rV = t # actual is a single number
-            if gradient: # for video
-                print("calculation is (actual regression value - sum of weighted inputs to final node) * inputs to the output layer * stepsize")
-                print(rV, "-", yV, "*", A[-1][-1], "*", self.step_size, '=')
-            outputError = rV - yV[0][0] # error is actual - predicted
-
-        errors.append(outputError)  # adds error to list of errors
-
-        #print("Actual:",rV,"\nPrediction:",yV)
-
-        o = A[-1]  # sets input to the node
-        outputD = np.outer(o[-1],outputError) * self.step_size  # sets delta for the output layer using input to the output layer
-        deltas[-1] = (outputD)  # adds delta of output layer to delta list
-        if gradient: # for video
-            print(outputD)
-        deltas.reverse()  # backpropagation, so reversed the list
-        weights = self.weights  # local copy of weights
-
-        for i in range(len(deltas) - 1):  # finding deltas for each layer
-            o = A.pop()  # sets next output
-            error = (1 - np.tanh(o[0])**2) * np.dot(errors[-1],weights[-i-1].T)  # gets error using derivative of
-            # tanh derivative and back propagated error
-            inputs = A[-1]  # sets input to the weight matrix, prev node output
-            if len(A) == 1:
-                deltas[i + 1] = np.outer(inputs,error) * self.step_size # saves delta to list of deltas
-            else:
-                deltas[i + 1] = np.outer(inputs[-1], error) * self.step_size
-            errors.append(error)  # adds the error to errors
-
-        errors.reverse()
-        deltas.reverse()  # resets orientations
-        if gradient:  # video
-            temp = [i+self.deltas[idx] for idx, i in enumerate(self.weights)]
-            print("\nWeight updates are previous layer weights + gradient of that layer")
-            print("Previous weights:\n", self.weights, "\nWeight updates:\n", deltas, "\nNew Weights:\n", temp)
-
-        # updates all the deltas/gradients and weights
-        self.deltas = [i*self.momentum+deltas[idx] for idx, i in enumerate(self.deltas)]
-        self.weights = [i+self.deltas[idx] for idx, i in enumerate(self.weights)]
-        self.bweights = [i+(self.step_size*errors[idx]) for idx, i in enumerate(self.bweights)]
-
     def Test(self):
         actual = []  # for performance metrics
         prediction = []
@@ -262,13 +197,11 @@ class MLP:
     # ---------------
     # performs cross validation, resets weights and rotates train test data
 
-    def crossValidate(self, times=10, history=False, save=False):
+    def crossValidate(self, times=10, history=False):
         metric_vec = np.zeros(times)  # stores result for each fold
         timeseries = np.zeros(self.epochs)  # for convergence experiment
         for i in range(times):  # going throught amount of folds
-            if save:
-                weights = []
-                bweights = []
+
             print('Fold',i)
             #reset MLP to original state
             self.weights = self.weightsCopy  # reinit beginning parameters
@@ -276,19 +209,10 @@ class MLP:
             self.deltas = self.deltasCopy
 
             timeseries += self.Train(history=history)  # trains data
-            if save: weights.append(self.weights), bweights.append(self.bweights)
             metric_vec[i] = self.Test()  # adds test result to result array
             self.samples.append(self.samples.pop(0))  # rotation of folds
             self.train = pd.concat(self.samples[0:9])
             self.test = self.samples[9]
-        if history:  # convergence experiment
-            return timeseries / times
-        if save:
-            weight3d = [np.array([i[idx] for i in weights]) for idx, ii in enumerate(weights[0])]
-            bweight3d = [np.array([i[idx] for i in bweights]) for idx, ii in enumerate(bweights[0])]
-            np.savez("Weights/"+self.name+"/"+str(len(self.nodes))+"/weights", *weight3d)
-            np.savez("Weights/"+self.name+"/"+str(len(self.nodes))+"/bweights", *bweight3d)
-        print(metric_vec.mean())
         return metric_vec.mean()
 
     # performance
@@ -339,134 +263,6 @@ def recall(m):
     r = diag / np.sum(M, axis= 1)  # true positives / TP + false negatives
     return r
 
-# tune
-# --------------
-# given a data set, gets performance on test set for all combinations of nodes and layers and given step sizes
-
-def tune():  # to tune things
-    data = ["forestfires.data"] # files to tune
-    performance = {}  # to save results
-
-    for a in data:
-        print(a)
-        test = MLP(a,[4,4],500, step_size = 0.05,  momentum = .1)
-        nodes = [list(combinations_with_replacement([test.input-i for i in range(test.input-test.output+1)], i)) for i in [0,1,2]]  # gets combinations of layers to tun, between inpout nodes and output nodes
-        stepsize = [0.000001, 0.000005,0.00001, 0.00005, 0.0001, 0.0005, 0.001, 0.01]  # stepsizes to test
-        performance[a] = {}
-
-        for ii in reversed(nodes):
-            for i in reversed(ii):
-                layers = str(i)
-                test = MLP(a,i, 500,step_size = 0.05,  momentum = .5)
-                performance[a][layers] = {}
-                for l in stepsize:
-                    print(test.nodes, l)
-                    test.step_size = l
-                    result = test.crossValidate(1)  # running test
-                    performance[a][layers][l] = result
-                    print(result)
-        print(performance[a])
-
-    print(performance)
-
-# Video
-# ------------
-# to fulfill all video requirements
-
-def video():
-
-    print("One test fold sample outputs for glass and machine, 500 epochs:\n")
-    layers = [([0],0.01),([7],0.01),([7,7],0.01)]
-    print("Classification: Glass\n")
-    for i in layers:
-        test = MLP("glass.data", i[0], i[1], 0.1)
-        result = test.crossValidate(1)
-        print("Nodes in Layer(s):", i[0],"\nPerformance (F1 score):", result)
-    layers2 = [([0], 0.0001), ([6], 0.0001), ([6, 6], 0.00001)]
-    print("\nRegression: Machine\n")
-    for i in layers2:
-        test2 = MLP("machine.data", i[0], i[1], 0.5)
-        result = test2.crossValidate(1)
-        print("Nodes in Layer(s):", i[0], "\nPerformance (MSE):", result)
 
 
-    print("\nSample models for no hidden layer, one hidden layer, and two hidden "
-          "layers\n-------------------------------------")
-    print("Inputs are size of the Y axis (rows), output is size of the X axis (columns)")
-    print("Inputs are dot multiplied with the weights\n"
-          "then the output (1d vector) is put through tanh activation function\n------------------------------")
-    list = ["no hidden layers", "1 hidden layer", "2 hidden layers"]
-    layers = [([0], 0.01), ([6], 0.01), ([6,6], 0.01)]
-    for idx, i in enumerate(layers):
-        print(list[idx])
-        test = MLP("glass.data", i[0], i[1], 0.1, 250 )
-        print(test.weights)
 
-
-    print("\nForward Propagation with tanh activation function (machine):\n")  # other print statements in train
-    test2.Train(video=True)
-
-
-    print("\n\nOutput gradient calculation and weight updates:")  # other print statements in backpropagate
-    print("classification:\n")
-    test.Train(gradient=True)
-    print("regression:\n")
-    test2.Train(gradient=True)
-
-    layers = [([0],0.01),([7],0.01),([7,7],0.01)]
-    print("\n10 fold CrossValidation for glass:")
-    for i in layers:
-        test = MLP("glass.data", i[0], i[1], 0.1)
-        result = test.crossValidate(10)
-        print("Nodes in Layer(s):", i[0],"\nPerformance (F1 score):", result)
-
-# convergenceExperiment
-# ------------------------
-# runs experiment to get data to create graph of average convergence over 10 folds for a variety of step sizes
-def convergenceExperiment():
-    data = [["machine.data",[6,6],[ 0.000005,0.00001,0.00005,0.0001,0.0005],0.5, 500], ["glass.data", [7,7] ,[0.001,0.005,0.01,0.05, 0.1],0.1, 500]]  # sets and steps
-    results = {}
-    for d in data:
-        print(d[0])
-        results[d[0]] = {}
-        for step in d[2]:
-            print(step)
-            results[d[0]][step] = {}
-            test = MLP(d[0],d[1],step,d[3],d[4])
-            result = test.crossValidate(10, history=True)  # test
-            print(result)
-            results[d[0]][step] = result
-
-    print(results)
-
-data = ["forestfires.data", "glass.data", "soybean-small.data", "breast-cancer-wisconsin.data"]
-parameters = {"machine.data":
-                   {"0" : {"epoch" : 500, 'step' : 0.0001, "m" : 0.5, "nodes" : []},
-              "1": {"epoch" : 500, 'step' : 0.0001, "m" : 0.5, "nodes" : [6]},
-             "2": {"epoch" : 500, 'step' : 0.00005, "m" : 0.5, "nodes" : [6,6]}},
-             "abalone.data" :
-                  {"0" : {"epoch" : 100, 'step' : 0.001, "m" : 0.5, "nodes" : []},
-              "1": {"epoch" : 100, 'step' : 0.001, "m" : 0.5, "nodes" : [8]},
-             "2": {"epoch" : 100, 'step' : 0.0005, "m" : 0.5, "nodes" : [8,5]}},
-              "forestfires.data":
-                   {"0" : {"epoch" : 500, 'step' : 0.00005, "m" : 0.5, "nodes" : []},
-              "1": {"epoch" : 500, 'step' : 0.0005, "m" : 0.5, "nodes" : [22]},
-             "2": {"epoch" : 500, 'step' : 0.00005, "m" : 0.5, "nodes" : [15,9]}},
-              "glass.data" :
-                   {"0" : {"epoch" : 250, 'step' : 0.15, "m" : 0.1, "nodes" : []},
-              "1": {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : [7]},
-             "2": {"epoch" : 250, 'step' : 0.1, "m" : 0.1, "nodes" : [7,7]}},
-              "breast-cancer-wisconsin.data" :
-                   {"0" : {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : []},
-              "1": {"epoch" : 250, 'step' : 0.05, "m" : 0.1, "nodes" : [7]},
-             "2": {"epoch" : 250, 'step' : 0.05, "m" : 0.1, "nodes" : [6,6]}},
-              "soybean-small.data" :
-                   {"0" : {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : []},
-              "1": {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : [4]},
-             "2": {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : [4,4]}}}
-types = ["0", "1", "2"]
-for i in data:
-    for ii in types:
-        print(i,ii)
-        test = MLP(i,parameters[i][ii]["nodes"],parameters[i][ii]["step"],parameters[i][ii]["m"], parameters[i][ii]["epoch"])
-        test.crossValidate(save=True)
