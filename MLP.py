@@ -44,7 +44,6 @@ class MLP:
         # [input layer (input x nodes), [hidden nodes (prev layer x current x layers)], output layer (nodes x output)]
 
         if not self.weights:
-
             if nodes[0] == 0:  # case for no hidden layers
                 self.weights = [np.random.uniform(-0.01, 1/(self.input+self.output), size=(self.input, self.output))]
                 self.bweights = [np.random.uniform(-0.01, 0.01, size=(1, self.output))]
@@ -160,6 +159,9 @@ class MLP:
             performance = np.sum((np.array(prediction)-np.array(actual))**2) /len(prediction)
         np.seterr(invalid="warn")
         return performance
+
+    def getWeights(self):
+        return self.weights
 
 # F1 score
 # -------------

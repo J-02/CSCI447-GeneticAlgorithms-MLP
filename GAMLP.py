@@ -18,7 +18,7 @@ class GAModel:
         self.momentum = momentum
         for model in self.solutionPopulation:
             # calculate fitnesses of all models in the solution population
-            MLP_model = MLP(self.data, self.nodes, model, self.step_size, self.momentum)
+            MLP_model = MLP(self.data, self.nodes, None, self.step_size, self.momentum)
             self.populationFitnesses.append(MLP_model.Train())
 
     #training function, iterates through generations until the best model in a given generation doesn't improve sufficiently
@@ -29,6 +29,7 @@ class GAModel:
         generations = 0
         timesWithoutChange = 0
         while not converged:
+            print('Generation',generations+1)
             newSolutionPopulation = []
             newPopulationFitnesses = []
             #performs n/5 reproductions, will probably need to figure out how to decide this later
@@ -77,6 +78,7 @@ class GAModel:
                 if timesWithoutChange == 10: converged = True
             else: timesWithoutChange = 0
             lastBestFitness = maxSolutionFitness
+            print('This generation best fitness: ', maxSolutionFitness)
 
         return bestSolution, maxSolutionFitness
 
@@ -153,6 +155,15 @@ class GAModel:
 
         return mutatedSolution
 
-test = GAModel()
+
+
+
+population = []
+for i in range(10):
+    nextMLP = MLP('glass.data', [9])
+    population.append(nextMLP.getWeights())
+
+test = GAModel('glass.data', [9], solutionPopulation=population)
+test.Train()
 
 
