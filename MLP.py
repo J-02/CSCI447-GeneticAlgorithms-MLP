@@ -59,6 +59,9 @@ class MLP:
         self.deltas = [np.zeros_like(i) for i in self.weights]  # empty set for deltas/gradients of prev back prop
 
         # make copies of original state of MLP for cross-validation
+        self.weightsCopy = self.weights.copy()
+        self.bweightsCopy = self.bweights.copy()
+        self.deltasCopy = self.deltas.copy()
 
     # train
     # ------
@@ -67,6 +70,23 @@ class MLP:
     def Train(self,video=False, Graph=False, gradient=False, history=False):
         # creating training set
         trainV = self.train.to_numpy()  # initializes dataframe to numpy
+
+        # helper variables for calculating convergence
+        performance = [0]
+        converged = False
+        in_row = 0
+
+        times = [0]
+
+        # for live graph
+        if Graph:
+            plt.ion()
+            graph = plt.plot(times, performance)[0]
+            plt.xlim([0, 1000])
+            if self.classification:
+                plt.ylim([0, 1])
+            else:
+                plt.ylim([0, 100])
 
         # while training on the training set still improves by some amount (can change later)
         np.random.shuffle(trainV)  # shuffles training data
@@ -145,6 +165,130 @@ class MLP:
     def softMax(self, o):
         val = np.exp(o)/np.sum(np.exp(o))
         return val
+
+    # backPropogate
+    #-------------------
+    # using gradient descent calculates error and adjusts weights in the NN
+
+
+    def backPropogate(self, A, t, gradient=False):
+        a = list(A)  # local copy of outputs for debugging because of popping
+        deltas = [np.zeros_like(i) for i in self.weights]  # initialize deltas/gradients
+        errors = []  # empty list to store errors of each node/layer
+        o = A.pop()  # sets the output of the prev iteration
+        yV = o[-1]  # sets prediction as last output, needs rounded for binary classification
+
+        if self.output > 2:  # multiple classes
+
+            rV = np.zeros(self.output) # establishing ground truth vector
+            rV[np.where(self.classes == t)] = 1  # creates one dim one hot encoded ground truth vector
+            outputError = (rV - yV)  # gets distance for each class
+            if gradient: # for video
+                print("calculation is (Truth value vector - softmax output vector) * inputs to the output layer * stepsize")
+                print(rV, "-",yV, "*", A[-1][-1], "*", self.step_size, '=' )
+        elif self.classification:  # 2 classes
+            rV = int(np.where(self.classes == t)[0])  # gets index of actual prediction
+            yV = yV[-1].round()  # rounds to 0 or 1 from tanh output
+            outputError = (rV - yV)*(1-np.tanh(o[0])**2)  # calculates error using derivative of hyperbolic tan
+        else:  # regression
+            rV = t # actual is a single number
+            if gradient: # for video
+                print("calculation is (actual regression value - sum of weighted inputs to final node) * inputs to the output layer * stepsize")
+                print(rV, "-", yV, "*", A[-1][-1], "*", self.step_size, '=')
+            outputError = rV - yV[0][0] # error is actual - predicted
+
+        errors.append(outputError)  # adds error to list of errors
+
+        #print("Actual:",rV,"\nPrediction:",yV)
+
+        o = A[-1]  # sets input to the node
+        outputD = np.outer(o[-1],outputError) * self.step_size  # sets delta for the output layer using input to the output layer
+        deltas[-1] = (outputD)  # adds delta of output layer to delta list
+        if gradient: # for video
+            print(outputD)
+        deltas.reverse()  # backpropagation, so reversed the list
+        weights = self.weights  # local copy of weights
+
+        for i in range(len(deltas) - 1):  # finding deltas for each layer
+            o = A.pop()  # sets next output
+            error = (1 - np.tanh(o[0])**2) * np.dot(errors[-1],weights[-i-1].T)  # gets error using derivative of
+            # tanh derivative and back propagated error
+            inputs = A[-1]  # sets input to the weight matrix, prev node output
+            if len(A) == 1:
+                deltas[i + 1] = np.outer(inputs,error) * self.step_size # saves delta to list of deltas
+            else:
+                deltas[i + 1] = np.outer(inputs[-1], error) * self.step_size
+            errors.append(error)  # adds the error to errors
+
+        errors.reverse()
+        deltas.reverse()  # resets orientations
+        if gradient:  # video
+            temp = [i+self.deltas[idx] for idx, i in enumerate(self.weights)]
+            print("\nWeight updates are previous layer weights + gradient of that layer")
+            print("Previous weights:\n", self.weights, "\nWeight updates:\n", deltas, "\nNew Weights:\n", temp)
+
+        # updates all the deltas/gradients and weights
+        self.deltas = [i*self.momentum+deltas[idx] for idx, i in enumerate(self.deltas)]
+        self.weights = [i+self.deltas[idx] for idx, i in enumerate(self.weights)]
+        self.bweights = [i+(self.step_size*errors[idx]) for idx, i in enumerate(self.bweights)]
+
+    def Test(self):
+        actual = []  # for performance metrics
+        prediction = []
+        testV = self.test.to_numpy()  # init test data to numpy
+        for x in testV:  # going through each test vector
+            t = x[-1]  # sets target output
+            x = x[:-1]  # drops class catagory
+            actual.append(t)
+            A = self.feedForward(x)  # feedsforward test vector
+            y = A[-1][0]  # sets output of feed forward
+            if self.classification:  # finds predicition
+                if self.output > 2:
+                    y = A[-1][-1]
+                    prediction.append(self.classes[np.argmax(y)])  # softmax
+                else:
+                    y = A[-1][-1]
+                    prediction.append(self.classes[int(y.round().item())])  # binary classification
+            else:
+                prediction.append(round(y[0][0],1))  # regression
+        #print('Predictions:',prediction)
+        #print('Actual:     ',actual)
+        performance = self.performance(prediction, actual)  # gets performance for test set
+        #print("Test:",performance)
+        return performance
+
+    # CrossValidate
+    # ---------------
+    # performs cross validation, resets weights and rotates train test data
+
+    def crossValidate(self, times=10, history=False, save=False):
+        metric_vec = np.zeros(times)  # stores result for each fold
+        timeseries = np.zeros(self.epochs)  # for convergence experiment
+        for i in range(times):  # going throught amount of folds
+            if save:
+                weights = []
+                bweights = []
+            print('Fold',i)
+            #reset MLP to original state
+            self.weights = self.weightsCopy  # reinit beginning parameters
+            self.bweights = self.bweightsCopy
+            self.deltas = self.deltasCopy
+
+            timeseries += self.Train(history=history)  # trains data
+            if save: weights.append(self.weights), bweights.append(self.bweights)
+            metric_vec[i] = self.Test()  # adds test result to result array
+            self.samples.append(self.samples.pop(0))  # rotation of folds
+            self.train = pd.concat(self.samples[0:9])
+            self.test = self.samples[9]
+        if history:  # convergence experiment
+            return timeseries / times
+        if save:
+            weight3d = [np.array([i[idx] for i in weights]) for idx, ii in enumerate(weights[0])]
+            bweight3d = [np.array([i[idx] for i in bweights]) for idx, ii in enumerate(bweights[0])]
+            np.savez("Weights/"+self.name+"/"+str(len(self.nodes))+"/weights", *weight3d)
+            np.savez("Weights/"+self.name+"/"+str(len(self.nodes))+"/bweights", *bweight3d)
+        print(metric_vec.mean())
+        return metric_vec.mean()
 
     # performance
     # -----------------
@@ -293,3 +437,35 @@ def convergenceExperiment():
             results[d[0]][step] = result
 
     print(results)
+
+data = ["forestfires.data", "glass.data", "soybean-small.data", "breast-cancer-wisconsin.data"]
+parameters = {"machine.data":
+                   {"0" : {"epoch" : 500, 'step' : 0.0001, "m" : 0.5, "nodes" : []},
+              "1": {"epoch" : 500, 'step' : 0.0001, "m" : 0.5, "nodes" : [6]},
+             "2": {"epoch" : 500, 'step' : 0.00005, "m" : 0.5, "nodes" : [6,6]}},
+             "abalone.data" :
+                  {"0" : {"epoch" : 100, 'step' : 0.001, "m" : 0.5, "nodes" : []},
+              "1": {"epoch" : 100, 'step' : 0.001, "m" : 0.5, "nodes" : [8]},
+             "2": {"epoch" : 100, 'step' : 0.0005, "m" : 0.5, "nodes" : [8,5]}},
+              "forestfires.data":
+                   {"0" : {"epoch" : 500, 'step' : 0.00005, "m" : 0.5, "nodes" : []},
+              "1": {"epoch" : 500, 'step' : 0.0005, "m" : 0.5, "nodes" : [22]},
+             "2": {"epoch" : 500, 'step' : 0.00005, "m" : 0.5, "nodes" : [15,9]}},
+              "glass.data" :
+                   {"0" : {"epoch" : 250, 'step' : 0.15, "m" : 0.1, "nodes" : []},
+              "1": {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : [7]},
+             "2": {"epoch" : 250, 'step' : 0.1, "m" : 0.1, "nodes" : [7,7]}},
+              "breast-cancer-wisconsin.data" :
+                   {"0" : {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : []},
+              "1": {"epoch" : 250, 'step' : 0.05, "m" : 0.1, "nodes" : [7]},
+             "2": {"epoch" : 250, 'step' : 0.05, "m" : 0.1, "nodes" : [6,6]}},
+              "soybean-small.data" :
+                   {"0" : {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : []},
+              "1": {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : [4]},
+             "2": {"epoch" : 250, 'step' : 0.01, "m" : 0.1, "nodes" : [4,4]}}}
+types = ["0", "1", "2"]
+for i in data:
+    for ii in types:
+        print(i,ii)
+        test = MLP(i,parameters[i][ii]["nodes"],parameters[i][ii]["step"],parameters[i][ii]["m"], parameters[i][ii]["epoch"])
+        test.crossValidate(save=True)
