@@ -80,15 +80,23 @@ class GAModel:
 
         return bestSolution, maxSolutionFitness
 
-    #select 2 parents to reproduce and create 2 children (using fitness-proportionate)
+    #select 2 parents to reproduce and create 2 children
     def selectParents(self):
+        # fitness proportionate
         #sum up all fitnesses across entire solution population
         fitnessSum = np.sum(self.populationFitnesses)
-
         #calcuate probabilities of each solution being selected for reproduction
         selectionProbabilities = self.populationFitnesses/fitnessSum
 
-        #choosing 2 parents based on probabilities
+        #rank proportionate
+        #sum up all ranks across entire solution population
+        #rankSum = np.sum(range(self.populationSize+1))
+        #find ranks of all models in population
+        #sortedRanks = np.argsort(self.populationFitnesses)
+        #define selection probabilities by these ranks
+        #selectionProbabilities = sortedRanks+1/rankSum
+
+        # choosing 2 parents based on probabilities
         parent1, parent2 = np.random.choice(range(self.populationSize), size=2, p=selectionProbabilities)
         return parent1, parent2
 
