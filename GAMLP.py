@@ -5,9 +5,9 @@ import random
 
 class GAModel:
     #initializes with a population of solutions, a probability of crossover, a probability of mutation, and a mutation SD
-    def __init__(self, data, nodes, step_size=.001, momentum=.5, solutionPopulation = [], probOfCrossover = .1, probOfMutation = .05, mutationSD = .01):
-        self.solutionPopulation = solutionPopulation
-        self.populationSize = len(solutionPopulation)
+    def __init__(self, data, nodes, step_size=.001, momentum=.5, solutionPopulationWeights = [], probOfCrossover = .1, probOfMutation = .05, mutationSD = .01):
+        self.solutionPopulation = solutionPopulationWeights
+        self.populationSize = len(solutionPopulationWeights)
         self.populationFitnesses = []
         self.probOfCrossover = probOfCrossover
         self.probOfMutation = probOfMutation
@@ -116,9 +116,9 @@ class GAModel:
         # uniform crossover
         # swap the genes from the two parents in the children with some fixed probability
         #iterate through all genes in the chromosomes
-        for i in len(parentChromosome1):
-            chanceOfCrossover = np.random.uniform(0,1)
-            if chanceOfCrossover < self.probOfCrossover:
+        crossoverBinaries = np.random.choice([0,1],p=[1-self.probOfCrossover,self.probOfCrossover], size=len(parentChromosome1))
+        for i in range(len(parentChromosome1)):
+            if crossoverBinaries[i] == 1:
                 childChromosome1[i] = parentChromosome2[i]
                 childChromosome2[i] = parentChromosome1[i]
 
@@ -146,10 +146,9 @@ class GAModel:
         chromosome = solution
 
         #iterate through all genes, mutate some % with a term from a normal distribution with fixed SD (need to tune)
-        for i in len(chromosome):
-            chanceOfMutation = np.random.uniform(0,1)
-            if chanceOfMutation < self.probOfMutation:
-                chromosome[i] = chromosome[i] + np.random.normal(0, self.mutationSD)
+        mutationBinaries = np.random.choice([0,1], p=[1-self.probOfMutation, self.probOfMutation], size=len(chromosome))
+        mutationTerms = np.random.normal(0, self.mutationSD, size=len(chromosome))
+        chromosome = chromosome + mutationBinaries*mutationTerms
 
         mutatedSolution = chromosome
 
@@ -157,13 +156,5 @@ class GAModel:
 
 
 
-
-population = []
-for i in range(10):
-    nextMLP = MLP('glass.data', [9])
-    population.append(nextMLP.getWeights())
-
-test = GAModel('glass.data', [9], solutionPopulation=population)
-test.Train()
 
 

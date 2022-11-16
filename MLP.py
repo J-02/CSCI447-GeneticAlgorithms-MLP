@@ -63,6 +63,7 @@ class MLP:
         self.bweightsCopy = self.bweights.copy()
         self.deltasCopy = self.deltas.copy()
 
+
     # train
     # ------
     # While not converged, feeds forward and does backpropagation for each point in the training set
