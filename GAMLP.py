@@ -1,5 +1,7 @@
 import numpy as np
+import pandas as pd
 from MLP import MLP
+import DataSpilt as ds
 import random
 #GA Experimentation Pseudocode; Trains a population of MLPs and uses a GA to select the best one
 
@@ -168,3 +170,107 @@ weights = [container[key] for key in container]
 
 # crossover
 weights = [crossover(i) for i in weights]
+
+class Dataset:
+    def __init__(self, data):
+        if ".data" in data:
+            self.path = "Data/"+data
+            self.name = data[:-5]
+        else:
+            self.path = "Data/"+data+".data"
+            self.name = data
+
+        self.data = pd.read_csv(self.path, index_col=0, header=0)
+        self.samples = ds.getSamples(data)  # gets split data
+        self.train = pd.concat(self.samples[:9])  # creates training data
+        self.test = self.samples[9]  # creates test data
+
+        self.networks = [network(self, i) for i in [0,1,2]]
+
+    def shuffle(self):
+        self.samples.append(self.samples.pop(0))  # rotation of folds
+        self.train = pd.concat(self.samples[0:9])
+        self.test = self.samples[9]
+
+
+class network(Dataset):
+    def __init__(self, layers):
+        w, bw = np.load('Weights/' + self.name + "/" + str(layers) +"/" + 'weights.npz'), np.load(
+            'Weights/' + self.name + "/" + str(layers) + "/" + 'bweights.npz')
+        self.weights = [w[key] for key in w]
+        self.bweights = [bw[key] for key in bw]
+
+    def evaluate(self):
+        trainV = self.train.to_numpy()
+
+        # todo: should be able to push all training vectors through the population network
+
+class geneticAlgorithm(network):
+
+    def __init__(self, prob, SD):
+        self.performances = self.evaluate()
+        self.pM = prob
+        self.mSD = SD
+
+    def select(self):
+        # dunno what to do here since population is from 10 fold CV
+        pass
+
+    def crossover(self, array):
+        xover = np.random.choice([0, 1], p=[0.9, 0.1], size=(array.shape[0] // 2, array.shape[1], array.shape[2]))
+        xover2 = (~xover.astype(bool)).astype(int)
+        children1 = np.array([np.choose(xover[i], array[i::5]) for i in range(5)])
+        children2 = np.array([np.choose(xover2[i], array[i::5]) for i in range(5)])
+        children = np.vstack([children1, children2])
+        return children
+
+     #randomly alter some genes in a given solution's chromosome, with fixed probability
+    def Mutate(self, children):
+
+        #iterate through all genes, mutate some % with a term from a normal distribution with fixed SD (need to tune)
+        mutationBinaries = np.random.choice([0,1], p=[1-self.pM, self.pM], size=children.size())
+        mutationTerms = np.random.normal(0, self.mSD, size=children)
+        mutatedChildren = children + mutationBinaries*mutationTerms
+
+        return mutatedChildren
+
+    # crosses over then mutates weights
+    def evolve(self):
+        self.weights = [self.mutate(self.crossover(i)) for i in self.weights]
+        self.bweights = [self.mutate(self.crossover(i)) for i in self.bweights]
+
+
+class diffEvo(network):
+    # xoP = crossover probabiliy
+    def __init__(self, xoP):
+        self.xoP = xoP
+
+    def mutate(self):
+        trialV = "mutated weights"
+        return trialV
+
+    def crossover(self, trialV):
+        children = "crossed over trial vectors with original vectors"
+        return children
+
+    def pick(self):
+        best = "picks which is best of child or parent"
+        return best
+
+    # mutates then crosses over weights
+    def evolve(self):
+        self.weights = [self.pick(self.crossover(self.mutate(i))) for i in self.weights]
+        self.bweights = [self.pick(self.crossover(self.mutate(i))) for i in self.bweights]
+
+class SBO(network):
+
+    pas
+
+
+
+
+
+
+
+
+
