@@ -203,7 +203,7 @@ class network(Dataset):
     def evaluate(self):
         trainV = self.train.to_numpy()
 
-        # todo: should be able to push all training vectors through the population network
+        # todo: should be able to push all training vectors through the population network in one pass
 
 class geneticAlgorithm(network):
 
