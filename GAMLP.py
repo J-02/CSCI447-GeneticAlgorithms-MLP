@@ -264,7 +264,7 @@ class diffEvo(network):
 
 class SBO(network):
 
-    pas
+    pass
 
 
 
