@@ -202,6 +202,7 @@ class Dataset:
         else:  # regression
             self.outputF = identity
 
+
     def shuffle(self):
         self.samples.append(self.samples.pop(0))  # rotation of folds
         self.train = pd.concat(self.samples[0:9])
@@ -214,7 +215,7 @@ class Network(Dataset):
         w, bw = np.load('Weights/' + self.name + "/" + str(layers) +"/" + 'weights.npz'), np.load(
             'Weights/' + self.name + "/" + str(layers) + "/" + 'bweights.npz')
         self.weights = [w[key] for key in w]
-        self.bweights = [bw[key] for key in bw]
+        self.bweights = [np.swapaxes(bw[key], 1, 0) for key in bw]
         self.layers = layers
         self.weightsCopy = self.weights.copy()
         self.bweightsCopy = self.bweights.copy()
@@ -232,21 +233,23 @@ class Network(Dataset):
                 z = np.einsum('ijk,jkl -> ijl', a, i) + self.bweights[idx]
             a = np.tanh(z)
 
+        w = self.weights[-1]
         try:
-            z = np.dot(a, self.weights[-1]) + self.bweights[-1]
+            z = np.dot(a, w) + self.bweights[-1]
             if z.ndim > 3:
                 raise Exception
         except:
-            z = np.einsum('ijk,jkl -> ijl', a, i) + self.bweights[-1]
+            z = np.einsum('ijk,jkl -> ijl', a, w) + self.bweights[-1]
 
-        y = self.outputF(z)
+        y = self.outputF(z).squeeze()
+        self.performance(y, solutions)
 
     def performance(self, prediction, actual):
         np.seterr(invalid="ignore")
         if (self.classification):
             performance = f1_score(prediction, actual)
         else:
-            performance = np.sum((prediction - actual) ** 2) / prediction.shape[0]
+            performance = np.sum((prediction - actual[:,np.newaxis]) ** 2, axis = 0) / prediction.shape[0]
         np.seterr(invalid="warn")
         return performance
 
