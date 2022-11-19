@@ -220,6 +220,8 @@ class Network(Dataset):
         self.weightsCopy = self.weights.copy()
         self.bweightsCopy = self.bweights.copy()
 
+
+    # pushes all training vectors through the population network in one pass
     def evaluate(self):
         train = self.train.to_numpy()
         solutions = train[:,-1]
@@ -255,7 +257,7 @@ class Network(Dataset):
 
 
 
-        # todo: should be able to push all training vectors through the population network in one pass
+
 
 
 def identity(x):
