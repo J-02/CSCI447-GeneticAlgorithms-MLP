@@ -181,11 +181,26 @@ class Dataset:
             self.name = data
 
         self.data = pd.read_csv(self.path, index_col=0, header=0)
-        self.samples = ds.getSamples(data)  # gets split data
+        self.samples = ds.getSamples(self.data)  # gets split data
         self.train = pd.concat(self.samples[:9])  # creates training data
         self.test = self.samples[9]  # creates test data
 
-        self.networks = [network(self, i) for i in [0,1,2]]
+        if 'class' in self.train.columns:  # checks if the dataset is classification or regression
+            self.classification = True
+            self.classes = self.data['class'].unique()
+            self.output = len(self.classes)
+            if self.output == 2:
+                self.output = 1  # binary classification
+        else:
+            self.classification = False
+            self.output = 1  # if regression one single output
+
+        if self.output > 2:  # multi classification
+            self.outputF = softMax
+        elif self.classification:  # binary classification
+            self.outputF = np.tanh
+        else:  # regression
+            self.outputF = identity
 
     def shuffle(self):
         self.samples.append(self.samples.pop(0))  # rotation of folds
@@ -193,19 +208,88 @@ class Dataset:
         self.test = self.samples[9]
 
 
-class network(Dataset):
-    def __init__(self, layers):
+class Network(Dataset):
+    def __init__(self, data, layers):
+        super().__init__(data)
         w, bw = np.load('Weights/' + self.name + "/" + str(layers) +"/" + 'weights.npz'), np.load(
             'Weights/' + self.name + "/" + str(layers) + "/" + 'bweights.npz')
         self.weights = [w[key] for key in w]
         self.bweights = [bw[key] for key in bw]
+        self.layers = layers
+        self.weightsCopy = self.weights.copy()
+        self.bweightsCopy = self.bweights.copy()
 
     def evaluate(self):
-        trainV = self.train.to_numpy()
+        train = self.train.to_numpy()
+        solutions = train[:,-1]
+        a = train[:,:-1]
+        for idx, i in enumerate(self.weights[:-1]):
+            try :
+                z = np.dot(a, i) + self.bweights[idx]
+                if z.ndim > 3:
+                    raise Exception
+            except:
+                z = np.einsum('ijk,jkl -> ijl', a, i) + self.bweights[idx]
+            a = np.tanh(z)
+
+        try:
+            z = np.dot(a, self.weights[-1]) + self.bweights[-1]
+            if z.ndim > 3:
+                raise Exception
+        except:
+            z = np.einsum('ijk,jkl -> ijl', a, i) + self.bweights[-1]
+
+        y = self.outputF(z)
+
+    def performance(self, prediction, actual):
+        np.seterr(invalid="ignore")
+        if (self.classification):
+            performance = f1_score(prediction, actual)
+        else:
+            performance = np.sum((prediction - actual) ** 2) / prediction.shape[0]
+        np.seterr(invalid="warn")
+        return performance
+
+
 
         # todo: should be able to push all training vectors through the population network in one pass
 
-class geneticAlgorithm(network):
+
+def identity(x):
+    return x
+def softMax(o):
+    val = np.exp(o)/np.sum(np.exp(o))
+    return val
+def f1_score(prediction, actual):
+    np.seterr(divide='ignore', invalid='ignore')
+    m = pd.crosstab(prediction, actual)  # confusion matrix
+    i = m.index.union(m.columns)
+    m = m.reindex(index=i, columns=i, fill_value=0)  # makes the matrix square
+    m.fillna(0)  # fills na values w/ 0
+    P = precision(m)  # calculates precision
+    R = recall(m)  # calcaultes recall
+    f1 = 2*(R * P) / (P + R)  # calculates f1
+    f1 = f1[~np.isnan(f1)]  # drops na values
+    f1 = np.sum(f1) / f1.shape[0]  # gets average of all f1 scores
+    np.seterr(divide='warn', invalid='warn')
+    return f1
+
+def precision(m):
+    M = m.to_numpy()
+    diag = np.diag(M)  # true positives
+    p = diag / np.sum(M, axis= 0)  # true positives / TP + false positives
+    return p
+
+def recall(m):
+
+    M = m.to_numpy()
+    diag = np.diag(M)  # true positives
+    r = diag / np.sum(M, axis= 1)  # true positives / TP + false negatives
+    return r
+
+
+
+class geneticAlgorithm(Network):
 
     def __init__(self, prob, SD):
         self.performances = self.evaluate()
@@ -240,7 +324,7 @@ class geneticAlgorithm(network):
         self.bweights = [self.mutate(self.crossover(i)) for i in self.bweights]
 
 
-class diffEvo(network):
+class diffEvo(Network):
     # xoP = crossover probabiliy
     def __init__(self, xoP):
         self.xoP = xoP
@@ -262,11 +346,13 @@ class diffEvo(network):
         self.weights = [self.pick(self.crossover(self.mutate(i))) for i in self.weights]
         self.bweights = [self.pick(self.crossover(self.mutate(i))) for i in self.bweights]
 
-class SBO(network):
+class SBO(Network):
 
     pass
 
 
+a = Network("abalone",2)
+a.evaluate()
 
 
 

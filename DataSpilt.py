@@ -6,8 +6,8 @@ import pandas as pd
 # Splits dataset into 10 stratified samples
 # input is a .data file in the /Data/ folder
 # returns 10 stratified dataframes
-def getSamples(dataset):
-    df = pd.read_csv("Data/"+dataset,index_col=0, header=0)
+def getSamples(df):
+
 
     samples = []
 
