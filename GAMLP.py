@@ -191,7 +191,7 @@ class Dataset:
             self.outputF = identity
 
         self.networks = {i: Network(self, i) for i in [0, 1, 2]}
-        self.yolo = 0
+
 
     def shuffle(self):
         self.samples.append(self.samples.pop(0))  # rotation of folds
@@ -233,7 +233,8 @@ class Network:
             z = np.einsum('ijk,jkl -> ijl', a, w) + self.bweights[-1]
 
         y = self.dataset.outputF(z).squeeze()
-        self.performance(y, solutions)
+        performances = self.performance(y, solutions)
+        return performances
 
         # todo: assign performances to weight index of weights in list
         # ie: 4.2 mse is from weight set 5 in the 3d weight list
@@ -257,11 +258,15 @@ class Network:
     # performs genetic algorithm
     def geneticAlgorithm(self, prob=.05, SD=.01):
 
-        def select(array):
-            # dunno what to do here since population is from 10 fold CV
-            return array
+        def select(array, x = 10):
+            # should select x number of pairs weighting selection odds by fitness
+            pSelection = array / np.sum(array)
+            pairs = [np.random.choice(np.where(array)[0], p=pSelection, replace=False, size=2) for i in range(x)]
+            return pairs
 
-        def crossover(array):
+        def crossover(pairs):
+
+            # todo: crossover pairs from select method, currently just randomly selects
             xover = np.random.choice([0, 1], p=[0.5, 0.5], size=(array.shape[0] // 2, array.shape[1], array.shape[2]))
             xover2 = (~xover.astype(bool)).astype(int)
             children1 = np.array([np.choose(xover[i], array[i::5]) for i in range(5)])
@@ -282,13 +287,17 @@ class Network:
         def evolve():
             self.weights = [Mutate(crossover(i)) for i in self.weights]
             self.bweights = [Mutate(crossover(i)) for i in self.bweights]
-        def run(prob=0.05, SD=0.01):
-            self.pM = prob
-            self.mSD = SD
-            performance = []
-            done = False
-            while not done:
-                pass
+        def run():
+
+            # evaluate weights and assign performance
+            fitness = self.evaluate()
+            pairs = select(fitness)
+
+            pass
+
+        done = False
+        while not done:
+            run()
 
     def diffEvo(self, xoP):
             # xoP = crossover probabiliy
@@ -347,4 +356,4 @@ def recall(m):
     return r
 
 abalone = Dataset("abalone")
-abalone.networks[2].evaluate()
+abalone.networks[2].geneticAlgorithm()
