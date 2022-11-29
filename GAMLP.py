@@ -81,11 +81,6 @@ class Network:
         performances = self.performance(y, solutions)
         return performances
 
-        # todo: assign performances to weight index of weights in list
-        # ie: 4.2 mse is from weight set 5 in the 3d weight list
-        # weight set 5 is the the 5/10 on the 3rd dimension
-        # for each layer of weights
-
     def performance(self, prediction, actual):
         np.seterr(invalid="ignore")
         if self.dataset.classification:
@@ -111,58 +106,49 @@ class Network:
 
         def crossover(pairs):
 
-            nextGenW = []
-            nextGenB = []
-            #iterate through each pair in the selected set of pairs
-            for pair in pairs:
-                parent1W = [i[pair[0],:,:] for i in self.weights]
-                parent1B = [i[0,pair[0],:] for i in self.bweights]
+            # iterate through each pair in the selected set of pairs
 
-                parent2W = [i[pair[1], :, :] for i in self.weights]
-                parent2B = [i[0,pair[1],:] for i in self.bweights]
+            # parents is a weight list that is a tuple with the bweight of that layer
+            # it is 3d but the 3rd dimension is only 2 one for each parent
+            # parents[n][i][0] is the nth pair, the ith layer, and the weights
+            # parents[0][0][1] is the first pair, the first layer, and the bweights
 
-                #randomly select genes that will be crossed over between the two parents
-                xoverW = [np.random.choice([0,1], p=[.5, .5], size=i.shape) for i in parent1W]
-                xoverB = [np.random.choice([0,1], p=[.5, .5], size=i.shape) for i in parent1B]
+            parents = [[(i[pair,:,:], self.bweights[idx][:,pair,:]) for idx, i in enumerate(self.weights)] for pair in pairs]
 
-                child1W = parent1W
-                child1B = parent1B
-                child2W = parent2W
-                child2B = parent2B
+            # xover is a similar structure except the xover matrix is 3d where the 3rd dimension is the amount of pairs
+            # xover[i][0][n] is the ith layer, the weights xover and the nth pair
+            # xover[2][1][2] is the 3rd layer, the bweights xover and the 3rd pair
 
-                #crossover the two children at the selected indices
-                for i in range(len(child1W)):
-                    child1W[i][np.where(xoverW[i] == 1)] = parent2W[i][np.where(xoverW[i] == 1)]
-                    child2W[i][np.where(xoverW[i] == 1)] = parent1W[i][np.where(xoverW[i] == 1)]
-                    child1B[i][np.where(xoverB[i] == 1)] = parent2B[i][np.where(xoverB[i] == 1)]
-                    child2B[i][np.where(xoverB[i] == 1)] = parent1B[i][np.where(xoverB[i] == 1)]
+            xover = [(np.random.choice([0, 1], p=[0.5, 0.5], size=(len(pairs), i.shape[1], i.shape[2])).astype(bool), np.random.choice([0, 1], p=[0.5, 0.5], size=(self.bweights[idx].shape[0], len(pairs), self.bweights[idx].shape[2])).astype(bool)) for idx,i in
+                     enumerate(self.weights)]
 
-                child1W = Mutate(child1W, .05, .01)
-                child1B = Mutate(child1B, .05, .01)
-                child2W = Mutate(child2W, .05, .01)
-                child2B = Mutate(child2B, .05, .01)
-                nextGenW.append(child1W)
-                nextGenW.append(child2W)
-                nextGenB.append(child1B)
-                nextGenB.append(child2B)
-            pass
+            # crossing over and putting things back together
+
+            cW1 = [[np.choose(i[0][pidx], p[idx][0]) for pidx, p in enumerate(parents)] for idx,i in enumerate(xover)]
+            cW2 = [[np.choose(~i[0][pidx], p[idx][0]) for pidx, p in enumerate(parents)] for idx,i in enumerate(xover)]
+            cBW1 = [[np.choose(i[1][:,pidx], p[idx][1][0]) for pidx, p in enumerate(parents)] for idx,i in enumerate(xover)]
+            cBW2 = [[np.choose(~i[1][:,pidx], p[idx][1][0]) for pidx, p in enumerate(parents)] for idx,i in enumerate(xover)]
+            newW = [np.vstack([np.array(cW1[idx]), np.array(cW2[idx])]) for idx, i in enumerate(self.weights)]
+            newBW  = [np.vstack([np.array(cBW1[idx]), np.array(cBW2[idx])]) for idx, i in enumerate(self.weights)]
+
+            return newW, newBW
+
+
         # randomly alter some genes in a given solution's chromosome, with fixed probability
-        def Mutate(child, mutationProb, mutationSD):
-            mutationBinaries = [np.random.choice([0,1], p=[1-mutationProb, mutationProb], size=i.shape) for i in child]
-            mutationTerms = [np.random.normal(0, mutationSD, size=i.shape) for i in child]
-            mutatedChild = child
-            for i in range(len(child)):
-                mutatedChild[i] = child[i] + mutationBinaries[i] * mutationTerms[i]
-            return mutatedChild
+        def Mutate(children, mutationProb=prob, mutationSD=SD):
+            mutationBinaries = [np.random.choice([0,1], p=[1-mutationProb, mutationProb], size=i.shape) for i in children]
+            mutationTerms = [np.random.normal(0, mutationSD, size=i.shape) for i in children]
+            mutated = [i + mutationBinaries[idx] * mutationTerms[idx] for idx, i in enumerate(children)]
+            return mutated
 
         def run():
 
             # evaluate weights and assign performance
             fitness = self.evaluate()
             pairs = select(fitness, int(len(fitness)/2))
-            crossover(pairs)
-
-
+            newW, newBW = crossover(pairs)
+            mW = Mutate(newW)
+            mBW = Mutate(newBW)
             return np.max(fitness)
 
         done = False
