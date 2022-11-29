@@ -142,13 +142,12 @@ class Network:
             return mutated
 
         def run():
-
             # evaluate weights and assign performance
             fitness = self.evaluate()
             pairs = select(fitness, int(len(fitness)/2))
             newW, newBW = crossover(pairs)
-            mW = Mutate(newW)
-            mBW = Mutate(newBW)
+            self.weights = Mutate(newW)
+            self.bweights = Mutate(newBW)
             return np.max(fitness)
 
         done = False
