@@ -3,6 +3,7 @@ import pandas as pd
 from MLP import MLP
 import DataSpilt as ds
 import random
+from line_profiler_pycharm import profile
 
 class Dataset:
     def __init__(self, data):
@@ -38,7 +39,7 @@ class Dataset:
         self.networks = {i: Network(self, i) for i in [0, 1, 2]}
 
 
-    def shuffle(self):
+    def nextFold(self):
         self.samples.append(self.samples.pop(0))  # rotation of folds
         self.train = pd.concat(self.samples[0:9])
         self.test = self.samples[9]
@@ -56,25 +57,22 @@ class Network:
         self.bweightsCopy = self.bweights.copy()
 
     # pushes all training vectors through the population network in one pass
+    @profile
     def evaluate(self):
         train = self.dataset.train.to_numpy()
         solutions = train[:, -1]
         a = train[:, :-1]
         for idx, i in enumerate(self.weights[:-1]):
-            try:
-                z = np.dot(a, i) + self.bweights[idx]
-                if z.ndim > 3:
-                    raise Exception
-            except:
+            if idx == 0:
+                z = np.einsum('ij,kjl-> ikl', a, i) + self.bweights[idx]
+            if idx == 1:
                 z = np.einsum('ijk,jkl -> ijl', a, i) + self.bweights[idx]
             a = np.tanh(z)
 
         w = self.weights[-1]
-        try:
-            z = np.dot(a, w) + self.bweights[-1]
-            if z.ndim > 3:
-                raise Exception
-        except:
+        if len(self.weights) == 1:
+            z = np.einsum('ij,kjl-> ikl', a, w) + self.bweights[-1]
+        else:
             z = np.einsum('ijk,jkl -> ijl', a, w) + self.bweights[-1]
 
         y = self.dataset.outputF(z).squeeze()
@@ -96,12 +94,14 @@ class Network:
         self.bweights = self.bweightsCopy
 
     # performs genetic algorithm
-    def geneticAlgorithm(self, prob=.05, SD=.01):
 
-        def select(fitnesses, x = 5):
+    def geneticAlgorithm(self, prob=.1, SD=.01):
+
+        def select(fitnesses, x=5):
             # should select x number of pairs weighting selection odds by fitness
             pSelection = fitnesses / np.sum(fitnesses)
-            pairs = [np.random.choice(np.where(fitnesses)[0], p=pSelection, replace=False, size=2) for i in range(x)]
+            p = (1-pSelection)/np.sum(1 - pSelection)
+            pairs = [np.random.choice(np.where(fitnesses)[0], p=p, replace=False, size=2) for i in range(x)]
             return pairs
 
         def crossover(pairs):
@@ -129,7 +129,7 @@ class Network:
             cBW1 = [[np.choose(i[1][:,pidx], p[idx][1][0]) for pidx, p in enumerate(parents)] for idx,i in enumerate(xover)]
             cBW2 = [[np.choose(~i[1][:,pidx], p[idx][1][0]) for pidx, p in enumerate(parents)] for idx,i in enumerate(xover)]
             newW = [np.vstack([np.array(cW1[idx]), np.array(cW2[idx])]) for idx, i in enumerate(self.weights)]
-            newBW  = [np.vstack([np.array(cBW1[idx]), np.array(cBW2[idx])]) for idx, i in enumerate(self.weights)]
+            newBW  = [np.vstack([np.array(cBW1[idx]), np.array(cBW2[idx])]).reshape(1,len(cBW2[0])*2,i.shape[2]) for idx, i in enumerate(self.bweights)]
 
             return newW, newBW
 
@@ -141,10 +141,10 @@ class Network:
             mutated = [i + mutationBinaries[idx] * mutationTerms[idx] for idx, i in enumerate(children)]
             return mutated
 
+        @profile
         def run():
-            # evaluate weights and assign performance
             fitness = self.evaluate()
-            pairs = select(fitness, int(len(fitness)/2))
+            pairs = select(fitness, 50)
             newW, newBW = crossover(pairs)
             self.weights = Mutate(newW)
             self.bweights = Mutate(newBW)
@@ -154,7 +154,8 @@ class Network:
         lastGenBestFitness = np.max(self.evaluate())
         while not done:
             bestGenFitness = run()
-            if abs(lastGenBestFitness - bestGenFitness) < .01*lastGenBestFitness: done = True
+            print(bestGenFitness)
+
 
     def diffEvo(self, xoP):
             # xoP = crossover probabiliy
