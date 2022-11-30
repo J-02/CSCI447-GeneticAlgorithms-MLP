@@ -95,13 +95,14 @@ class Network:
 
     # performs genetic algorithm
 
-    def geneticAlgorithm(self, prob=.1, SD=.01):
+    def geneticAlgorithm(self, prob=.005, SD=.001):
 
         def select(fitnesses, x=5):
             # should select x number of pairs weighting selection odds by fitness
             pSelection = fitnesses / np.sum(fitnesses)
-            p = (1-pSelection)/np.sum(1 - pSelection)
-            pairs = [np.random.choice(np.where(fitnesses)[0], p=p, replace=False, size=2) for i in range(x)]
+            if not self.dataset.classification:
+                pSelection = (1-pSelection)/np.sum(1 - pSelection)
+            pairs = [np.random.choice(np.where(fitnesses)[0], p=pSelection, replace=False, size=2) for i in range(x)]
             return pairs
 
         def crossover(pairs):
