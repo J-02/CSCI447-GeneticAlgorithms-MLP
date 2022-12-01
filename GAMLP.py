@@ -99,7 +99,7 @@ class Network:
 
         def select(fitnesses, x=5):
             # should select x number of pairs weighting selection odds by fitness
-            pSelection = fitnesses / np.sum(fitnesses)
+            pSelection = fitnesses**2 / np.sum(fitnesses**2)
             if not self.dataset.classification:
                 pSelection = (1-pSelection)/np.sum(1 - pSelection)
             pairs = [np.random.choice(np.where(fitnesses)[0], p=pSelection, replace=False, size=2) for i in range(x)]
@@ -145,7 +145,9 @@ class Network:
         @profile
         def run():
             fitness = self.evaluate()
-            pairs = select(fitness, 50)
+            size = len(fitness)
+            times = min(size**2, 250)
+            pairs = select(fitness,times)
             newW, newBW = crossover(pairs)
             self.weights = Mutate(newW)
             self.bweights = Mutate(newBW)
@@ -153,22 +155,27 @@ class Network:
 
         done = False
         lastGenBestFitness = np.max(self.evaluate())
+        gen = 0
         while not done:
             bestGenFitness = run()
             print(bestGenFitness)
+            gen += 1
+            print(gen)
 
 
     def diffEvo(self, xoP):
             # xoP = crossover probabiliy
-        def mutate():
+        def mutate(parents):
+            selection = [np.random.choice() for i in self.weights]
             trialV = "mutated weights"
             return trialV
 
         def crossover(trialV):
+
             children = "crossed over trial vectors with original vectors"
             return children
 
-        def pick():
+        def pick(parents, children):
             best = "picks which is best of child or parent"
             return best
 
@@ -176,6 +183,10 @@ class Network:
         def evolve():
             self.weights = [pick(crossover(mutate(i))) for i in self.weights]
             self.bweights = [pick(crossover(mutate(i))) for i in self.bweights]
+
+        def run():
+            fitness = self.evaluate()
+            return np.max(fitness)
 
 
     def SBO(self):
