@@ -58,22 +58,26 @@ class Network:
 
     # pushes all training vectors through the population network in one pass
     @profile
-    def evaluate(self):
+    def evaluate(self, weights=None):
+        if not weights:
+            weights = self.weights
+            bweights = self.bweights
+        else: weights, bweights = weights
         train = self.dataset.train.to_numpy()
         solutions = train[:, -1]
         a = train[:, :-1]
-        for idx, i in enumerate(self.weights[:-1]):
+        for idx, i in enumerate(weights[:-1]):
             if idx == 0:
-                z = np.einsum('ij,kjl-> ikl', a, i) + self.bweights[idx]
+                z = np.einsum('ij,kjl-> ikl', a, i) + bweights[idx]
             if idx == 1:
-                z = np.einsum('ijk,jkl -> ijl', a, i) + self.bweights[idx]
+                z = np.einsum('ijk,jkl -> ijl', a, i) + bweights[idx]
             a = np.tanh(z)
 
-        w = self.weights[-1]
-        if len(self.weights) == 1:
-            z = np.einsum('ij,kjl-> ikl', a, w) + self.bweights[-1]
+        w = weights[-1]
+        if len(weights) == 1:
+            z = np.einsum('ij,kjl-> ikl', a, w) + bweights[-1]
         else:
-            z = np.einsum('ijk,jkl -> ijl', a, w) + self.bweights[-1]
+            z = np.einsum('ijk,jkl -> ijl', a, w) + bweights[-1]
 
         y = self.dataset.outputF(z).squeeze()
         performances = self.performance(y, solutions)
@@ -146,7 +150,7 @@ class Network:
         def run():
             fitness = self.evaluate()
             size = len(fitness)
-            times = min(size**2, 250)
+            times = min(size**2//2, 250)
             pairs = select(fitness,times)
             newW, newBW = crossover(pairs)
             self.weights = Mutate(newW)
@@ -155,38 +159,73 @@ class Network:
 
         done = False
         lastGenBestFitness = np.max(self.evaluate())
-        gen = 0
         while not done:
             bestGenFitness = run()
             print(bestGenFitness)
-            gen += 1
-            print(gen)
 
 
-    def diffEvo(self, xoP):
+    def diffEvo(self, xoP=0.5, sF=1):
             # xoP = crossover probabiliy
-        def mutate(parents):
-            selection = [np.random.choice() for i in self.weights]
-            trialV = "mutated weights"
-            return trialV
+            # sF = scale factor
+        def mutate(fitness):
+            choices = np.where(fitness)[0]
+            indexes = np.array([np.random.choice(np.where(choices != i)[0], size=3, replace=False) for i in choices])
+            trialWeights = [i[indexes[:,0]] + sF*(i[indexes[:,1]] - i[indexes[:,2]]) for i in self.weights]
+            trialBWeights = [i[:,indexes[:,0]] + sF*(i[:,indexes[:,1]] - i[:,indexes[:,2]]) for i in self.bweights]
+            trialVectors = trialWeights, trialBWeights
+            return trialVectors
+        def crossover(tV):
+            # tV = trial vectors
+            tW = tV[0]
+            tBW = tV[1]
 
-        def crossover(trialV):
 
-            children = "crossed over trial vectors with original vectors"
+            xover = [(np.random.choice([0, 1], p=[1-xoP, xoP], size=(tW[idx].shape[0], i.shape[1], i.shape[2])).astype(bool),
+                      np.random.choice([0, 1], p=[1-xoP, xoP], size=(self.bweights[idx].shape[0], tBW[idx].shape[1], self.bweights[idx].shape[2])).astype(bool)) for idx, i in
+                     enumerate(self.weights)]
+
+            # crossing over and putting things back together
+            Wpairs = [[np.array([tW[idx][pidx], ii]) for pidx, ii in enumerate(i)] for idx,i in enumerate(self.weights)]
+            BWpairs = [[np.array([tBW[idx][:,pidx], ii]) for pidx, ii in enumerate(i.reshape(i.shape[1], i.shape[0], i.shape[2]))] for idx,i in enumerate(self.bweights)]
+
+            cW1 = [np.array([np.choose(i[0][pidx], p) for pidx, p in enumerate(Wpairs[idx])]) for idx, i in enumerate(xover)]
+            cBW1 = [np.array([np.choose(i[1][:, pidx], p) for pidx, p in enumerate(BWpairs[idx])]).reshape(i[1].shape[0],i[1].shape[1],i[1].shape[2]) for idx, i in enumerate(xover)]
+            children = cW1, cBW1
             return children
 
-        def pick(parents, children):
-            best = "picks which is best of child or parent"
-            return best
+        def pick(children, pFit):
+            cFit = self.evaluate(children)
+            keep = np.where(cFit > pFit)
+            replace = np.where(cFit < pFit)
+            perf = np.min([cFit, pFit])
+            if self.dataset.classification:
+                keep, replace = replace, keep
+                perf = np.max([cFit, pFit])
+                if not np.any(cFit>pFit):
+                    return self.weights, self.bweights, pFit
+            if not np.any(cFit<pFit) and not self.dataset.classification:
+                return self.weights, self.bweights, pFit
+            bestW = [np.vstack([i[keep],children[0][idx][replace]]) for idx, i in enumerate(self.weights)]
+            # todo: needs to properly stack the old and new bias weights together,
+            # probably goin to how bias weights are shaped from the beggining or something currently errors out
+            bestBW = [np.vstack([i[:,keep][0][0],children[1][idx][:,replace][0][0]])[np.newaxis,:,:] for idx, i in enumerate(self.bweights)]
+            fitness = np.vstack([pFit[keep],cFit[replace]])
+            return bestW, bestBW, fitness
 
             # mutates then crosses over weights
-        def evolve():
-            self.weights = [pick(crossover(mutate(i))) for i in self.weights]
-            self.bweights = [pick(crossover(mutate(i))) for i in self.bweights]
+        def evolve(fitness):
+            self.weights, self.bweights, fitness = pick(crossover(mutate(fitness)), fitness)
+            return fitness
 
         def run():
             fitness = self.evaluate()
-            return np.max(fitness)
+            next = evolve(fitness)
+            return np.max(next)
+
+        done = False
+        while not done:
+            best = run()
+            print(best)
 
 
     def SBO(self):
@@ -226,4 +265,4 @@ def recall(m):
     return r
 
 abalone = Dataset("abalone")
-abalone.networks[2].geneticAlgorithm()
+abalone.networks[2].diffEvo()
