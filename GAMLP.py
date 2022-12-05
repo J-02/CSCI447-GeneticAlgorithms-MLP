@@ -434,5 +434,5 @@ def recall(m):
 
 
 abalone = Dataset("abalone")
-print(abalone.networks[2].geneticAlgorithm())
+print(abalone.networks[2].PSO())
 # this runs cross validation
