@@ -267,7 +267,7 @@ class Network:
             performance.append(run())
             print(performance[-1], i)
 
-            if i == 500:
+            if i == 600:
                 done = True
         print(performance[-1])
 
