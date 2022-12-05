@@ -4,7 +4,8 @@ from MLP import MLP
 import DataSpilt as ds
 import random
 from line_profiler_pycharm import profile
-
+import matplotlib.pyplot as plt
+import networkx as nx
 class Dataset:
     def __init__(self, data):
         if ".data" in data:
@@ -56,10 +57,10 @@ class Network:
         self.weightsCopy = self.weights.copy()
         self.bweightsCopy = self.bweights.copy()
 
-    def crossValidate(self,algorithm,x=10):
+    def crossValidate(self,x=10):
         performance = []
         for i in range(x):
-            algorithm()
+            self.PSO()
             perf = self.evaluate(test=True)
             performance.append[perf]
             self.reset()
@@ -181,10 +182,17 @@ class Network:
         while not done:
             performance.append(run())
             gen += 1
-            #print(performance[-1], gen)
+            print(performance[-1], gen)
             if gen == 500:
                 done = True
         print(performance[-1])
+
+            #graph.set_xdata(times)
+            #graph.set_ydata(bestFitnesses)
+            #plt.xlim([0, times[-1]+1])
+            #plt.ylim([0, max(bestFitnesses)+.05*max(bestFitnesses)])
+            #plt.draw()
+            #plt.pause(0.001)
 
 
     def diffEvo(self, xoP=.22, sF=.04):
@@ -257,14 +265,98 @@ class Network:
         performance = []
         for i in range(x):
             performance.append(run())
-            #print(performance[-1], i)
+            print(performance[-1], i)
+
             if i == 500:
                 done = True
         print(performance[-1])
 
 
-    def SBO(self):
-        pass
+    def PSO(self, inertia=.5, c1=1.486, c2=1.486):
+        # initialize pBest positions and fitnesses, gBest position and gBest fitness
+        pBestPos = self.weights.copy()
+        pBests = self.evaluate()
+        gBestPos = [i[np.argmin(pBests)] for i in self.weights]
+        self.gBest = np.argmin(pBests)
+
+        # initialize velocities randomly, might want to tune bounds later
+        velocities = []
+        for i in range(len(pBests)):
+            velocities.append([np.random.uniform(-.1,.1, size=i[0].shape) for i in self.weights])
+
+        # update the personal bests for all solutions
+        def updatePBests(fitness):
+            # for each particle
+            for i in range(len(fitness)):
+
+                # if new fitness is the best the particle's seen so far
+                if fitness[i] < pBests[i]:
+
+                    # update the personal best fitness of the particle
+                    pBests[i] = fitness[i]
+
+                    # as well as the position that this fitness was found at
+                    [pBestPos[0][i], pBestPos[1][i], pBestPos[2][i]] = [j[i] for j in self.weights]
+
+
+        #update the global best fitness
+        def updateGBest(fitness):
+            # if any of the newly found fitnesses are better than the current global best
+            if(np.argmin(fitness) < self.gBest):
+
+                # update the position that this global best was found at
+                gBestPos = [i[np.argmin(fitness)] for i in self.weights]
+
+                # as well as storing what this global best fitness is
+                self.gBest = fitness[np.argmin(fitness)]
+
+        # update the velocities of each particle
+        def updateVelocities():
+            # for each particle
+            for i in range(len(pBests)):
+
+                # generate two random numbers ~ U[0,1]
+                r1, r2 = np.random.uniform(0, 1, size=2)
+
+                # compute the inertia component of the velocity equation
+                inertia_component = [inertia*j for j in velocities[i]]
+
+                # the cognitive component (taking personal best into account)
+                cognitive_component = [c1*r1*(j[i]-k[i]) for j, k in zip(pBestPos, self.weights)]
+
+                # and the social component (taking global best into account)
+                social_component = [c2*r2*(j-k[i]) for j, k in zip(gBestPos, self.weights)]
+
+                # combine all three terms for the velocity of each particle
+                velocities[i] = [np.add(j,np.add(k,l)) for j, k, l in zip(inertia_component,cognitive_component,social_component)]
+
+        # update the positions of each particle
+        def updatePositions():
+
+            # for each particle
+            for i in range(len(pBests)):
+
+                # add the velocity of each particle onto the current position
+                [self.weights[0][i], self.weights[1][i], self.weights[2][i]] = [j[i] + k for j, k in zip(self.weights, velocities[i])]
+
+            return self.weights
+
+        # runner for PSO
+        def run():
+            updateVelocities()
+            updatePositions()
+            fitness = self.evaluate()
+            updatePBests(fitness)
+            updateGBest(fitness)
+            fitness = self.evaluate()
+            return np.min(fitness)
+
+
+        while(True):
+            performance = run()
+            print(performance)
+
+
 
 def identity(x):
     return x
@@ -300,4 +392,4 @@ def recall(m):
     return r
 
 abalone = Dataset("abalone")
-abalone.networks[2].crossValidate(diffEvo)
+abalone.networks[2].crossValidate()
