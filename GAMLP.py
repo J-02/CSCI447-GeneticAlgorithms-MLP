@@ -347,7 +347,7 @@ def recall(m):
     r = diag / np.sum(M, axis=1)  # true positives / TP + false negatives
     return r
 
-#
+
 abalone = Dataset("abalone")
 print(abalone.networks[2].geneticAlgorithm())
 # this runs cross validation
