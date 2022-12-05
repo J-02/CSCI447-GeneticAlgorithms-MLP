@@ -56,16 +56,32 @@ class Network:
         self.weightsCopy = self.weights.copy()
         self.bweightsCopy = self.bweights.copy()
 
+    def crossValidate(self,algorithm,x=10):
+        performance = []
+        for i in range(x):
+            algorithm()
+            perf = self.evaluate(test=True)
+            performance.append[perf]
+            self.reset()
+            self.dataset.nextFold()
+            performance = np.array(performance)
+        return performance, performance.mean()
+
     # pushes all training vectors through the population network in one pass
     @profile
-    def evaluate(self, weights=None):
+    def evaluate(self, weights=None, test=False):
+        if test:
+            data = self.dataset.test.to_numpy()
+        else:
+            data = self.dataset.train.to_numpy()
+
         if not weights:
             weights = self.weights
             bweights = self.bweights
         else: weights, bweights = weights
-        train = self.dataset.train.to_numpy()
-        solutions = train[:, -1]
-        a = train[:, :-1]
+
+        solutions = data[:, -1]
+        a = data[:, :-1]
         for idx, i in enumerate(weights[:-1]):
             if idx == 0:
                 z = np.einsum('ij,kjl-> ikl', a, i) + bweights[idx]
@@ -157,14 +173,22 @@ class Network:
             self.bweights = Mutate(newBW)
             return np.max(fitness)
 
+        x = 500
         done = False
-        lastGenBestFitness = np.max(self.evaluate())
+        gen = 0
+        performance = []
+        performance.append(np.max(self.evaluate()))
         while not done:
-            bestGenFitness = run()
-            print(bestGenFitness)
+            performance.append(run())
+            gen += 1
+            #print(performance[-1], gen)
+            if gen == 500:
+                done = True
+        print(performance[-1])
 
 
-    def diffEvo(self, xoP=0.5, sF=1):
+    def diffEvo(self, xoP=.22, sF=.04):
+
             # xoP = crossover probabiliy
             # sF = scale factor
         def mutate(fitness):
@@ -172,7 +196,9 @@ class Network:
             indexes = np.array([np.random.choice(np.where(choices != i)[0], size=3, replace=False) for i in choices])
             trialWeights = [i[indexes[:,0]] + sF*(i[indexes[:,1]] - i[indexes[:,2]]) for i in self.weights]
             trialBWeights = [i[:,indexes[:,0]] + sF*(i[:,indexes[:,1]] - i[:,indexes[:,2]]) for i in self.bweights]
+
             trialVectors = trialWeights, trialBWeights
+
             return trialVectors
         def crossover(tV):
             # tV = trial vectors
@@ -191,11 +217,12 @@ class Network:
             cW1 = [np.array([np.choose(i[0][pidx], p) for pidx, p in enumerate(Wpairs[idx])]) for idx, i in enumerate(xover)]
             cBW1 = [np.array([np.choose(i[1][:, pidx], p) for pidx, p in enumerate(BWpairs[idx])]).reshape(i[1].shape[0],i[1].shape[1],i[1].shape[2]) for idx, i in enumerate(xover)]
             children = cW1, cBW1
+
             return children
 
         def pick(children, pFit):
             cFit = self.evaluate(children)
-            keep = np.where(cFit > pFit)
+            keep = np.where(cFit >= pFit)
             replace = np.where(cFit < pFit)
             perf = np.min([cFit, pFit])
             if self.dataset.classification:
@@ -206,10 +233,13 @@ class Network:
             if not np.any(cFit<pFit) and not self.dataset.classification:
                 return self.weights, self.bweights, pFit
             bestW = [np.vstack([i[keep],children[0][idx][replace]]) for idx, i in enumerate(self.weights)]
-            # todo: needs to properly stack the old and new bias weights together,
-            # probably goin to how bias weights are shaped from the beggining or something currently errors out
             bestBW = [np.vstack([i[:,keep][0][0],children[1][idx][:,replace][0][0]])[np.newaxis,:,:] for idx, i in enumerate(self.bweights)]
-            fitness = np.vstack([pFit[keep],cFit[replace]])
+
+            try:
+                fitness = np.insert(pFit[keep],-1,cFit[replace])
+            except:
+                fitness = cFit[replace]
+
             return bestW, bestBW, fitness
 
             # mutates then crosses over weights
@@ -222,10 +252,15 @@ class Network:
             next = evolve(fitness)
             return np.max(next)
 
+        x = 500
         done = False
-        while not done:
-            best = run()
-            print(best)
+        performance = []
+        for i in range(x):
+            performance.append(run())
+            #print(performance[-1], i)
+            if i == 500:
+                done = True
+        print(performance[-1])
 
 
     def SBO(self):
@@ -265,4 +300,4 @@ def recall(m):
     return r
 
 abalone = Dataset("abalone")
-abalone.networks[2].diffEvo()
+abalone.networks[2].crossValidate(diffEvo)
