@@ -5,7 +5,6 @@ import DataSpilt as ds
 import random
 from line_profiler_pycharm import profile
 import matplotlib.pyplot as plt
-import networkx as nx
 from tqdm import trange
 
 
@@ -113,11 +112,12 @@ class Network:
         self.bweights = self.bweightsCopy
 
     # picks best performing weights on the train fold to use on the test fold
-    def pickWeights(self, fArray):
+    def pickWeights(self, fArray=None):
         if self.dataset.classification:
             index = np.where(np.max(fArray))
         else:
             index = np.where(np.min(fArray))
+
         self.tWeight = [i[index] for i in self.weights]
         self.tBWeight = [i[:, index][0] for i in self.bweights]
 
@@ -185,9 +185,11 @@ class Network:
             newW, newBW = crossover(pairs)
             self.weights = Mutate(newW)
             self.bweights = Mutate(newBW)
-            mF = np.max(fitness)
-            #print(mF)
-            return mF
+            if self.dataset.classification:
+                best = np.max(fitness)
+            else:
+                best = np.min(fitness)
+            return best
 
         def train(x=500):
             performanceTrain = []
@@ -196,7 +198,6 @@ class Network:
                 performanceTrain.append(run())
                 # print(performance[-1], gen)
             self.pickWeights(performanceTrain[-1])
-            print(performanceTrain[-1])
 
         performance = []
         for i in range(10):
@@ -287,7 +288,11 @@ class Network:
         def run():
             fitness = self.evaluate()
             next = evolve(fitness)
-            return np.max(next)
+            if self.dataset.classification:
+                best = np.max(next)
+            else:
+                best = np.min(next)
+            return best
 
         def train(x=500):
             performanceTrain = []
@@ -295,7 +300,7 @@ class Network:
             for i in trange(x):
                 performanceTrain.append(run())
             self.pickWeights(performanceTrain[-1])
-            print(performanceTrain[-1])
+
 
         performance = []
         for i in range(10):
@@ -309,19 +314,36 @@ class Network:
         return performance, performance.mean()
 
     def PSO(self, inertia=.5, c1=1.486, c2=1.486):
+        c = 2.05  # to do use velocity constriction c+c > 4
+        v = [np.zeros(shape=i.shape) for i in self.weights]
+        bv = [np.zeros(shape=i.shape) for i in self.bweights] # intial velocities 0
         # initialize pBest positions and fitnesses, gBest position and gBest fitness
-        pBestPos = self.weights.copy()
-        pBests = self.evaluate()
-        gBestPos = [i[np.argmin(pBests)] for i in self.weights]
-        self.gBest = np.argmin(pBests)
-
-        # initialize velocities randomly, might want to tune bounds later
-        velocities = []
-        for i in range(len(pBests)):
-            velocities.append([np.random.uniform(-.1,.1, size=i[0].shape) for i in self.weights])
+        bestF = self.evaluate()  # initial fitness is best fitness
+        bestW = self.weights  # initial weights are best weights
+        bestBW = self.bweights
+        gB = np.where(np.min(bestF) == bestF)[0][0]  # where the current global best model is
+        gBF = bestF[gB]  # the current global best fitness
 
         # update the personal bests for all solutions
         def updatePBests(fitness):
+
+            # finds where performance was better than personal best
+            if self.dataset.classification:
+                updates = np.where(fitness > bestF)
+            else:
+                updates = np.where(fitness < bestF)
+            # updates pbest fitness
+            bestF[updates] = fitness[updates]
+
+            # replaces the weights that improved with the new pbest
+            for idx, i in enumerate(self.weights):
+                bestW[idx][updates] = i[updates]
+
+            for idx, i in enumerate(self.bweights):
+                bestBW[idx][:,updates] = i[:,updates]
+
+            return
+            # ----------------
             # for each particle
             for i in range(len(fitness)):
 
@@ -337,17 +359,43 @@ class Network:
 
         #update the global best fitness
         def updateGBest(fitness):
-            # if any of the newly found fitnesses are better than the current global best
-            if(np.argmin(fitness) < self.gBest):
 
-                # update the position that this global best was found at
-                gBestPos = [i[np.argmin(fitness)] for i in self.weights]
+            # finds where, if any the current fitness is greater than the global best
+            if self.dataset.classification:
+                update = np.where(np.max(fitness) > gBF)
+            else:
+                update = np.where(fitness < gBF)
 
-                # as well as storing what this global best fitness is
-                self.gBest = fitness[np.argmin(fitness)]
+            # if none returns prev global best
+            if len(update[0]) == 0:
+                return gB, gBF
+
+            # if the fitness did improve sets new global best
+            if self.dataset.classification:
+                newGB = np.max(fitness)
+            else:
+                newGB = np.min(fitness)
+
+            # sets global best index
+            update = np.where(fitness == newGB)[0][0]
+
+            return update, newGB
 
         # update the velocities of each particle
         def updateVelocities():
+
+            # constriction factor, k = 1 so random walk
+
+            phi = c*2
+            k = 2 / (abs(2 - phi - np.sqrt(phi**2-4*phi)))
+
+            r1, r2 = np.random.uniform(0, 1, size=2)
+
+            NewV = [k*(v[idx] + c * r1 *(bestW[idx] - i) + c * r2 *(bestW[idx][gB] - i)) for idx, i in enumerate(self.weights)]
+            NewBV = [k*(bv[idx] + c * r1 *(bestBW[idx] - i) + c * r2 *(bestBW[idx][:,gB] -i)) for idx, i in enumerate(self.bweights)]
+            return NewV, NewBV
+
+            # --------------------
             # for each particle
             for i in range(len(pBests)):
 
@@ -367,7 +415,14 @@ class Network:
                 velocities[i] = [np.add(j,np.add(k,l)) for j, k, l in zip(inertia_component,cognitive_component,social_component)]
 
         # update the positions of each particle
-        def updatePositions():
+        def updatePositions(v, bv):
+
+            self.weights = [i+v[idx] for idx, i in enumerate(self.weights)]
+            self.bweights = [i+bv[idx] for idx, i in enumerate(self.bweights)]
+
+            return
+
+            # --------------------
 
             # for each particle
             for i in range(len(pBests)):
@@ -377,20 +432,34 @@ class Network:
 
             return self.weights
 
-        # runner for PSO
         def run():
-            updateVelocities()
-            updatePositions()
             fitness = self.evaluate()
             updatePBests(fitness)
-            updateGBest(fitness)
-            fitness = self.evaluate()
-            return np.min(fitness)
+            globalBest, globalBestFitness = updateGBest(fitness)
+            newV, newBv = updateVelocities()
+            updatePositions(newV, newBv)
+            return globalBest, globalBestFitness, newV, newBv
 
+        def train(x = 500):
+            nonlocal gB, gBF, v, bv
+            gB, gBF = updateGBest(bestF)
+            performanceTrain = []
+            performanceTrain.append(gBF)
+            for i in trange(x):
+                gB, gBF, v, bv = run()
+            self.pickWeights(bestF)
 
-        while(True):
-            performance = run()
-            print(performance)
+        performance = []
+        for i in range(10):
+            train()
+            perf = self.evaluate(test=True)
+            print("Fold %s: %s" % (i + 1, perf))
+            performance.append(perf)
+            self.reset()
+            self.dataset.nextFold()
+        performance = np.array(performance)
+        return performance, performance.mean()
+
 
 
 
