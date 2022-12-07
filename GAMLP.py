@@ -5,7 +5,7 @@ import DataSpilt as ds
 import random
 from line_profiler_pycharm import profile
 import matplotlib.pyplot as plt
-from tqdm import trange
+from tqdm import trange, tqdm
 
 
 def identity(x):
@@ -199,6 +199,7 @@ class Network:
         np.seterr(divide='warn', invalid='warn')
         return F1
 
+    @profile
     def performance(self, prediction, actual, test=False):
         np.seterr(invalid="ignore")
         if self.dataset.classification:
@@ -298,13 +299,13 @@ class Network:
         def train(x=500):
             performanceTrain = []
             performanceTrain.append(np.max(self.evaluate()))
-            for i in trange(x):
+            for i in range(x):
                 performanceTrain.append(run())
                 # print(performance[-1], gen)
             self.pickWeights(performanceTrain[-1])
 
         performance = []
-        for i in range(10):
+        for i in trange(10):
             train()
             perf = self.evaluate(test=True)
             print("Fold %s: %s"%(i + 1, perf))
@@ -402,13 +403,13 @@ class Network:
         def train(x=500):
             performanceTrain = []
             performanceTrain.append(np.max(self.evaluate()))
-            for i in trange(x):
+            for i in range(x):
                 performanceTrain.append(run())
             self.pickWeights(performanceTrain[-1])
 
 
         performance = []
-        for i in range(10):
+        for i in trange(10):
             train()
             perf = self.evaluate(test=True)
             print("Fold %s: %s"%(i + 1, perf))
@@ -550,18 +551,21 @@ class Network:
             gB, gBF = updateGBest(bestF)
             performanceTrain = []
             performanceTrain.append(gBF)
-            for i in trange(x):
+            for i in range(x):
                 gB, gBF, v, bv = run()
             self.pickWeights(bestF)
 
+
         performance = []
-        for i in range(10):
+        for i in trange(10):
             train()
             perf = self.evaluate(test=True)
-            print("Fold %s: %s" % (i + 1, perf))
+            #print("Fold %s: %s" % (i + 1, perf))
             performance.append(perf)
             self.reset()
             self.dataset.nextFold()
+
+
         performance = np.array(performance)
         return performance, performance.mean()
 
@@ -571,6 +575,6 @@ class Network:
 
 
 
-glass = Dataset("glass")
-print(glass.networks[2].diffEvo())
+glass = Dataset("soybean-small")
+print(glass.networks[2].PSO())
 # this runs cross validation
