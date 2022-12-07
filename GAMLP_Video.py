@@ -641,15 +641,11 @@ class Network:
             return globalBest, globalBestFitness, newV, newBv
 
         def train(x = 500):
-            video = False
             nonlocal gB, gBF, v, bv
             gB, gBF = updateGBest(bestF)
             performanceTrain = []
             performanceTrain.append(gBF)
             for i in range(x):
-                print(video)
-                if i == x-1:
-                    video = True
                 gB, gBF, v, bv = run()
             self.pickWeights(bestF)
 
@@ -657,7 +653,7 @@ class Network:
         performance = []
         for i in range(folds):
             if video:
-                train(x=5)
+                train(x=1)
             else: train()
             perf = self.evaluate(test=True, eval=eval)
             #print("Fold %s: %s" % (i + 1, perf))
