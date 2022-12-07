@@ -1,93 +1,31 @@
 import numpy as np
 import pandas as pd
-from MLP import MLP
 import DataSpilt as ds
-import random
-from line_profiler_pycharm import profile
-import matplotlib.pyplot as plt
-from tqdm import trange, tqdm
+from tqdm import trange # used for CV progress bar, simply replace trange with range if issues
 
-
-def identity(x):
-    return x
-
-
-def softMax(o):
-    val = np.exp(o) / np.sum(np.exp(o))
-    return val
-
-
-def f1_score(prediction, actual):
-    np.seterr(divide='ignore', invalid='ignore')
-    if len(prediction.shape) == 1:
-        m = pd.crosstab(prediction, actual.astype(int))  # confusion matrix
-        i = m.index.union(m.columns)
-        m = m.reindex(index=i, columns=i, fill_value=0)  # makes the matrix square
-        m.fillna(0)  # fills na values w/ 0
-        P = precision(m)  # calculates precision
-        R = recall(m)  # calcaultes recall
-        f1 = 2 * (R * P) / (P + R)  # calculates f1
-        f1 = f1[~np.isnan(f1)]  # drops na values
-        f1 = np.sum(f1) / f1.shape[0]  # gets average of all f1 scores
-        np.seterr(divide='warn', invalid='warn')
-        return f1
-    else:
-        F1 = []
-        for i in prediction.T:
-            m = pd.crosstab(i, actual.astype(int))  # confusion matrix
-            i = m.index.union(m.columns)
-            m = m.reindex(index=i, columns=i, fill_value=0)  # makes the matrix square
-            m.fillna(0)  # fills na values w/ 0
-            P = precision(m)  # calculates precision
-            R = recall(m)  # calcaultes recall
-            f1 = 2 * (R * P) / (P + R)  # calculates f1
-            f1 = f1[~np.isnan(f1)]  # drops na values
-            f1 = np.sum(f1) / f1.shape[0]  # gets average of all f1 scores
-            F1.append(f1)
-        np.seterr(divide='warn', invalid='warn')
-        return np.array(F1)
-
-def CM(pred, actual):
-    classes = np.unique()
-    TP = np.sum((actual == pred), axis=1)
-    TN = np.sum((actual == pred)[:,~actual], axis=1)
-    FP = np.sum((actual != pred)[:,~actual], axis=1)
-    FN = np.sum((actual != pred)[:,actual], axis=1)
-    f1 = (2*TP)/(2*TP + FP + FN)
-    return f1
-
-
-def precision(m):
-    M = m.to_numpy()
-    diag = np.diag(M)  # true positives
-    p = diag / np.sum(M, axis=0)  # true positives / TP + false positives
-    return p
-
-
-def recall(m):
-    M = m.to_numpy()
-    diag = np.diag(M)  # true positives
-    r = diag / np.sum(M, axis=1)  # true positives / TP + false negatives
-    return r
-
+# Dataset object: takes a string the name of the data set with or without .data at the end
+#
+# Dataset initializes the information related to each specific data set including the weights for each net work type
+# Each dataset has 3 networks, 0 hidden layers, 1 hidden layer, and 2 hidden layers
+# These are loaded upon creation of a network using saved weights from MLP
 
 class Dataset:
     def __init__(self, data):
         if ".data" in data:
-            self.name = data[:-5]
+            self.name = data[:-5]  # sets data set name if input has .data
         else:
-            self.name = data
+            self.name = data # sets name if input without .data
 
-        self.path = "Data/" + self.name + ".data"
+        self.path = "Data/" + self.name + ".data"  # saves path to the data file
 
-        self.data = pd.read_csv(self.path, index_col=0, header=0)
+        self.data = pd.read_csv(self.path, index_col=0, header=0)  # gets the data in a data frame
         self.samples = ds.getSamples(self.data)  # gets split data
         self.train = pd.concat(self.samples[:9])  # creates training data
         self.test = self.samples[9]  # creates test data
 
         if 'class' in self.train.columns:  # checks if the dataset is classification or regression
             self.classification = True
-            self.classes = self.data['class'].unique()
+            self.classes = self.data['class'].unique() # gets classes
             self.output = len(self.classes)
             if self.output == 2:
                 self.output = 1  # binary classification
@@ -102,48 +40,58 @@ class Dataset:
         else:  # regression
             self.outputF = identity
 
-        self.networks = {i: Network(self, i) for i in [0, 1, 2]}
+        self.networks = {i: Network(self, i) for i in [0, 1, 2]}  # generates the initial networks for each number of hidden layers
 
+    # advances to the next training fold
     def nextFold(self):
-        self.samples.append(self.samples.pop(0))  # rotation of folds
+        self.samples.append(self.samples.pop(0))
         self.train = pd.concat(self.samples[0:9])
         self.test = self.samples[9]
 
 
+# Network object: takes a dataset and how many hidden layers should be in the network
+#
+# A network is a set of 3d weights initialized from the final weights used for each fold of CV in back propagation
+# weights are like: [[10xNxM]_0, ... [10xNxM]_n]] where n is the number of hidden layers
+# this optimizes the runtime of the program and eliminates for loops for each network
+# when testing only the best of 10 networks is used
+# each network has the methods for each of the evolutionary algorithms
+# when running an algorithm it by default will perform cross validation
+
 class Network:
     def __init__(self, dataset, layers):
-        self.dataset = dataset
+        self.dataset = dataset  # sets what dataset the network belongs to
         w, bw = np.load('Weights/' + self.dataset.name + "/" + str(layers) + "/" + 'weights.npz'), np.load(
             'Weights/' + self.dataset.name + "/" + str(layers) + "/" + 'bweights.npz')
-        self.weights = [w[key] for key in w]
+        # loads the weight matricies from MLP to the network for weights and bias weights
+        self.weights = [w[key] for key in w]  # unpacks 3d weights, one for each fold in CV of mlp
         self.bweights = [np.swapaxes(bw[key], 1, 0) for key in bw]
-        self.tWeight = self.weights
+        self.tWeight = self.weights # sets initial testing weights, updated later to 2d weights
         self.tBWeight = self.bweights
         self.layers = layers
-        self.weightsCopy = self.weights.copy()
+        self.weightsCopy = self.weights.copy()  # creates copy to reset after each algorithm
         self.bweightsCopy = self.bweights.copy()
         self.results = {}
 
     # pushes all training vectors through the population network in one pass
-    @profile
     def evaluate(self, weights=None, test=False):
-        if test:
+        if test: # if on the test fold of CV, uses only one set of 2d weight matrix to test
             data = self.dataset.test.to_numpy()
             weights = self.tWeight
             bweights = self.tBWeight
-        else:
+        else:  # if on train it uses a set of 3d weight matrices
             data = self.dataset.train.to_numpy()
-            if not weights:
+            if not weights:  # if no weights input to the function
                 weights = self.weights
                 bweights = self.bweights
-            else:
+            else:  # uses weights input to the function (used with seeing if child perfromance increased without updating the current weights)
                 weights, bweights = weights
 
-        solutions = data[:, -1]
-        a = data[:, :-1]
-        for idx, i in enumerate(weights[:-1]):
+        solutions = data[:, -1]  # sets solutions
+        a = data[:, :-1]  # drops solution
+        for idx, i in enumerate(weights[:-1]):  # feeding forward
             if idx == 0:
-                z = np.einsum('ij,kjl-> ikl', a, i) + bweights[idx]
+                z = np.einsum('ij,kjl-> ikl', a, i) + bweights[idx]  # matrix multiply
             if idx == 1:
                 z = np.einsum('ijk,jkl -> ijl', a, i) + bweights[idx]
             a = np.tanh(z)
@@ -154,7 +102,7 @@ class Network:
         else:
             z = np.einsum('ijk,jkl -> ijl', a, w) + bweights[-1]
 
-        y = self.dataset.outputF(z).squeeze()
+        y = self.dataset.outputF(z).squeeze()  # calls output function of dataset
 
         if self.dataset.output > 1:
             # multi-classification takes the index of the largest output of softmax
@@ -169,16 +117,30 @@ class Network:
         performances = self.performance(y, solutions, test)
         return performances
 
+    def performance(self, prediction, actual, test=False):
+        np.seterr(invalid="ignore")
+        if self.dataset.classification:
+            performance = self.F1(prediction, actual)
+        elif not test:
+            performance = np.sum((prediction - actual[:, np.newaxis]) ** 2, axis=0) / prediction.shape[0]
+        elif test:
+            performance = np.sum((np.atleast_2d(prediction) - np.atleast_2d(actual))[0] ** 2, axis=0) / \
+                          prediction.shape[0]
+        np.seterr(invalid="warn")
+        return performance
+
     def F1(self, pred, actual):
+        # 3d vectorized F1 score
         np.seterr(divide='ignore', invalid='ignore')
         actual = actual.astype(int)
         classes = self.dataset.classes
         timesactual = np.bincount(actual, minlength=np.max(classes) + 1)
-
+        # equivalent to TP + FP
 
         if len(pred.shape) > 1:
             correct = np.where(pred == actual[:, None], pred, 0).T
             timesguessed = np.apply_along_axis(np.bincount, 0, pred, minlength=np.max(classes) + 1).T
+            # equivalent to TP + FN
             TP = np.apply_along_axis(np.bincount, 1, correct, minlength=np.max(classes) + 1)
         else:
             correct = np.where(pred == actual, pred, 0).T
@@ -199,18 +161,6 @@ class Network:
         np.seterr(divide='warn', invalid='warn')
         return F1
 
-    @profile
-    def performance(self, prediction, actual, test=False):
-        np.seterr(invalid="ignore")
-        if self.dataset.classification:
-            performance = self.F1(prediction, actual)
-        elif not test:
-            performance = np.sum((prediction - actual[:, np.newaxis]) ** 2, axis=0) / prediction.shape[0]
-        elif test:
-            performance = np.sum((np.atleast_2d(prediction)- np.atleast_2d(actual))[0] ** 2, axis=0) / prediction.shape[0]
-        np.seterr(invalid="warn")
-        return performance
-
     # reset weights of network object after performing algorithm
     def reset(self):
         self.weights = self.weightsCopy
@@ -227,7 +177,6 @@ class Network:
         self.tBWeight = [i[:, index][0] for i in self.bweights]
 
     # performs genetic algorithm
-
     def geneticAlgorithm(self, prob=.005, SD=.001):
 
         def select(fitnesses, x=5):
@@ -282,7 +231,7 @@ class Network:
             mutated = [i + mutationBinaries[idx] * mutationTerms[idx] for idx, i in enumerate(children)]
             return mutated
 
-        @profile
+        # perfroms one run through of algorithm
         def run():
             fitness = self.evaluate()
             size = len(fitness)
@@ -296,6 +245,7 @@ class Network:
                 best = np.min(fitness)
             return best
 
+        # trains the weights and picks the best to train on
         def train(x=500):
             performanceTrain = []
             performanceTrain.append(np.max(self.evaluate()))
@@ -304,6 +254,7 @@ class Network:
                 # print(performance[-1], gen)
             self.pickWeights(performanceTrain[-1])
 
+        # perfroms the CV
         performance = []
         for i in trange(10):
             train()
@@ -315,6 +266,7 @@ class Network:
         performance = np.array(performance)
         return performance, performance.mean()
 
+    # Performs DiffEvo cv
     def diffEvo(self, xoP=.22, sF=.04):
 
         # xoP = crossover probabiliy
@@ -361,6 +313,7 @@ class Network:
 
             return children
 
+        # picks where children performance better than parents and replaces it
         def pick(children, pFit):
             cFit = self.evaluate(children)
             keep = np.where(cFit >= pFit)
@@ -387,10 +340,12 @@ class Network:
 
             # mutates then crosses over weights
 
+        # performs operations based on the input of a fitness
         def evolve(fitness):
             self.weights, self.bweights, fitness = pick(crossover(mutate(fitness)), fitness)
             return fitness
 
+        # runs one pass through of algorithm
         def run():
             fitness = self.evaluate()
             next = evolve(fitness)
@@ -400,6 +355,7 @@ class Network:
                 best = np.min(next)
             return best
 
+        # trains weights using diffEvo
         def train(x=500):
             performanceTrain = []
             performanceTrain.append(np.max(self.evaluate()))
@@ -407,7 +363,7 @@ class Network:
                 performanceTrain.append(run())
             self.pickWeights(performanceTrain[-1])
 
-
+        # performs CV
         performance = []
         for i in trange(10):
             train()
@@ -419,6 +375,7 @@ class Network:
         performance = np.array(performance)
         return performance, performance.mean()
 
+    # performing CV on PSO
     def PSO(self, inertia=.5, c1=1.486, c2=1.486):
         c = 2.05  # to do use velocity constriction c+c > 4
         v = [np.zeros(shape=i.shape) for i in self.weights]
@@ -448,21 +405,6 @@ class Network:
             for idx, i in enumerate(self.bweights):
                 bestBW[idx][:,updates] = i[:,updates]
 
-            return
-            # ----------------
-            # for each particle
-            for i in range(len(fitness)):
-
-                # if new fitness is the best the particle's seen so far
-                if fitness[i] < pBests[i]:
-
-                    # update the personal best fitness of the particle
-                    pBests[i] = fitness[i]
-
-                    # as well as the position that this fitness was found at
-                    [pBestPos[0][i], pBestPos[1][i], pBestPos[2][i]] = [j[i] for j in self.weights]
-
-
         #update the global best fitness
         def updateGBest(fitness):
 
@@ -490,54 +432,28 @@ class Network:
         # update the velocities of each particle
         def updateVelocities():
 
-            # constriction factor, k = 1 so random walk
-
+            # constriction factor
             phi = c*2
             k = 2 / (abs(2 - phi - np.sqrt(phi**2-4*phi)))
 
             r1, r2 = np.random.uniform(0, 1, size=2)
 
+            # sets new velocities using velocity constriction
             NewV = [k*(v[idx] + c * r1 *(bestW[idx] - i) + c * r2 *(bestW[idx][gB] - i)) for idx, i in enumerate(self.weights)]
             NewBV = [k*(bv[idx] + c * r1 *(bestBW[idx] - i) + c * r2 *(bestBW[idx][:,gB] -i)) for idx, i in enumerate(self.bweights)]
             return NewV, NewBV
 
-            # --------------------
-            # for each particle
-            for i in range(len(pBests)):
-
-                # generate two random numbers ~ U[0,1]
-                r1, r2 = np.random.uniform(0, 1, size=2)
-
-                # compute the inertia component of the velocity equation
-                inertia_component = [inertia*j for j in velocities[i]]
-
-                # the cognitive component (taking personal best into account)
-                cognitive_component = [c1*r1*(j[i]-k[i]) for j, k in zip(pBestPos, self.weights)]
-
-                # and the social component (taking global best into account)
-                social_component = [c2*r2*(j-k[i]) for j, k in zip(gBestPos, self.weights)]
-
-                # combine all three terms for the velocity of each particle
-                velocities[i] = [np.add(j,np.add(k,l)) for j, k, l in zip(inertia_component,cognitive_component,social_component)]
 
         # update the positions of each particle
         def updatePositions(v, bv):
 
+            # adds velocities to prev position
             self.weights = [i+v[idx] for idx, i in enumerate(self.weights)]
             self.bweights = [i+bv[idx] for idx, i in enumerate(self.bweights)]
 
             return
 
-            # --------------------
-
-            # for each particle
-            for i in range(len(pBests)):
-
-                # add the velocity of each particle onto the current position
-                [self.weights[0][i], self.weights[1][i], self.weights[2][i]] = [j[i] + k for j, k in zip(self.weights, velocities[i])]
-
-            return self.weights
-
+        # one run through the PSO algo
         def run():
             fitness = self.evaluate()
             updatePBests(fitness)
@@ -546,6 +462,7 @@ class Network:
             updatePositions(newV, newBv)
             return globalBest, globalBestFitness, newV, newBv
 
+        # trains a set of weights using PSO
         def train(x = 500):
             nonlocal gB, gBF, v, bv
             gB, gBF = updateGBest(bestF)
@@ -555,7 +472,7 @@ class Network:
                 gB, gBF, v, bv = run()
             self.pickWeights(bestF)
 
-
+        # performs the CV for PSO
         performance = []
         for i in trange(10):
             train()
@@ -564,17 +481,19 @@ class Network:
             performance.append(perf)
             self.reset()
             self.dataset.nextFold()
-
-
         performance = np.array(performance)
         return performance, performance.mean()
 
+# used for regression outputs
+def identity(x):
+    return x
+
+# used for multi-classification outputs
+def softMax(o):
+    val = np.exp(o) / np.sum(np.exp(o))
+    return val
 
 
-
-
-
-
-glass = Dataset("soybean-small")
+glass = Dataset("glass")
 print(glass.networks[2].PSO())
-# this runs cross validation
+# this runs the cross validation
