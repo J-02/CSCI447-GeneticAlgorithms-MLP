@@ -8,6 +8,69 @@ import matplotlib.pyplot as plt
 from tqdm import trange
 
 
+def identity(x):
+    return x
+
+
+def softMax(o):
+    val = np.exp(o) / np.sum(np.exp(o))
+    return val
+
+
+def f1_score(prediction, actual):
+    np.seterr(divide='ignore', invalid='ignore')
+    if len(prediction.shape) == 1:
+        m = pd.crosstab(prediction, actual.astype(int))  # confusion matrix
+        i = m.index.union(m.columns)
+        m = m.reindex(index=i, columns=i, fill_value=0)  # makes the matrix square
+        m.fillna(0)  # fills na values w/ 0
+        P = precision(m)  # calculates precision
+        R = recall(m)  # calcaultes recall
+        f1 = 2 * (R * P) / (P + R)  # calculates f1
+        f1 = f1[~np.isnan(f1)]  # drops na values
+        f1 = np.sum(f1) / f1.shape[0]  # gets average of all f1 scores
+        np.seterr(divide='warn', invalid='warn')
+        return f1
+    else:
+        F1 = []
+        for i in prediction.T:
+            m = pd.crosstab(i, actual.astype(int))  # confusion matrix
+            i = m.index.union(m.columns)
+            m = m.reindex(index=i, columns=i, fill_value=0)  # makes the matrix square
+            m.fillna(0)  # fills na values w/ 0
+            P = precision(m)  # calculates precision
+            R = recall(m)  # calcaultes recall
+            f1 = 2 * (R * P) / (P + R)  # calculates f1
+            f1 = f1[~np.isnan(f1)]  # drops na values
+            f1 = np.sum(f1) / f1.shape[0]  # gets average of all f1 scores
+            F1.append(f1)
+        np.seterr(divide='warn', invalid='warn')
+        return np.array(F1)
+
+def CM(pred, actual):
+    classes = np.unique()
+    TP = np.sum((actual == pred), axis=1)
+    TN = np.sum((actual == pred)[:,~actual], axis=1)
+    FP = np.sum((actual != pred)[:,~actual], axis=1)
+    FN = np.sum((actual != pred)[:,actual], axis=1)
+    f1 = (2*TP)/(2*TP + FP + FN)
+    return f1
+
+
+def precision(m):
+    M = m.to_numpy()
+    diag = np.diag(M)  # true positives
+    p = diag / np.sum(M, axis=0)  # true positives / TP + false positives
+    return p
+
+
+def recall(m):
+    M = m.to_numpy()
+    diag = np.diag(M)  # true positives
+    r = diag / np.sum(M, axis=1)  # true positives / TP + false negatives
+    return r
+
+
 class Dataset:
     def __init__(self, data):
         if ".data" in data:
@@ -92,13 +155,54 @@ class Network:
             z = np.einsum('ijk,jkl -> ijl', a, w) + bweights[-1]
 
         y = self.dataset.outputF(z).squeeze()
+
+        if self.dataset.output > 1:
+            # multi-classification takes the index of the largest output of softmax
+            if test: axis = 1
+            else: axis = 2
+            y = self.dataset.classes[np.argmax(y, axis=axis)]
+
+        elif self.dataset.classification:
+            # binary classification rounds to index either 0 or 1 of classes
+            y = self.dataset.classes[y.round().astype(int)]
+        # regression is just the output
         performances = self.performance(y, solutions, test)
         return performances
+
+    def F1(self, pred, actual):
+        np.seterr(divide='ignore', invalid='ignore')
+        actual = actual.astype(int)
+        classes = self.dataset.classes
+        timesactual = np.bincount(actual, minlength=np.max(classes) + 1)
+
+
+        if len(pred.shape) > 1:
+            correct = np.where(pred == actual[:, None], pred, 0).T
+            timesguessed = np.apply_along_axis(np.bincount, 0, pred, minlength=np.max(classes) + 1).T
+            TP = np.apply_along_axis(np.bincount, 1, correct, minlength=np.max(classes) + 1)
+        else:
+            correct = np.where(pred == actual, pred, 0).T
+            timesguessed = np.bincount(pred, minlength=np.max(classes) + 1).T
+            TP = np.bincount(correct, minlength=np.max(classes) + 1)
+
+        P = TP/ (timesactual)
+        R = TP/ (timesguessed)
+        f1 = (2 * (R * P) / (P + R))
+
+        if len(pred.shape) > 1:
+            classes = np.count_nonzero(~np.isnan(f1), axis=1)
+            F1 = np.sum(np.nan_to_num(f1), axis=1) / classes
+        else:
+            classes = np.count_nonzero(~np.isnan(f1))
+            F1 = np.sum(np.nan_to_num(f1)) / classes
+
+        np.seterr(divide='warn', invalid='warn')
+        return F1
 
     def performance(self, prediction, actual, test=False):
         np.seterr(invalid="ignore")
         if self.dataset.classification:
-            performance = f1_score(prediction, actual)
+            performance = self.F1(prediction, actual)
         elif not test:
             performance = np.sum((prediction - actual[:, np.newaxis]) ** 2, axis=0) / prediction.shape[0]
         elif test:
@@ -262,7 +366,8 @@ class Network:
             replace = np.where(cFit < pFit)
             perf = np.min([cFit, pFit])
             if self.dataset.classification:
-                keep, replace = replace, keep
+                keep = np.where(cFit <= pFit)
+                replace = np.where(cFit > pFit)
                 perf = np.max([cFit, pFit])
                 if not np.any(cFit > pFit):
                     return self.weights, self.bweights, pFit
@@ -464,44 +569,8 @@ class Network:
 
 
 
-def identity(x):
-    return x
 
 
-def softMax(o):
-    val = np.exp(o) / np.sum(np.exp(o))
-    return val
-
-
-def f1_score(prediction, actual):
-    np.seterr(divide='ignore', invalid='ignore')
-    m = pd.crosstab(prediction, actual)  # confusion matrix
-    i = m.index.union(m.columns)
-    m = m.reindex(index=i, columns=i, fill_value=0)  # makes the matrix square
-    m.fillna(0)  # fills na values w/ 0
-    P = precision(m)  # calculates precision
-    R = recall(m)  # calcaultes recall
-    f1 = 2 * (R * P) / (P + R)  # calculates f1
-    f1 = f1[~np.isnan(f1)]  # drops na values
-    f1 = np.sum(f1) / f1.shape[0]  # gets average of all f1 scores
-    np.seterr(divide='warn', invalid='warn')
-    return f1
-
-
-def precision(m):
-    M = m.to_numpy()
-    diag = np.diag(M)  # true positives
-    p = diag / np.sum(M, axis=0)  # true positives / TP + false positives
-    return p
-
-
-def recall(m):
-    M = m.to_numpy()
-    diag = np.diag(M)  # true positives
-    r = diag / np.sum(M, axis=1)  # true positives / TP + false negatives
-    return r
-
-
-abalone = Dataset("abalone")
-print(abalone.networks[2].PSO())
+glass = Dataset("glass")
+print(glass.networks[2].diffEvo())
 # this runs cross validation

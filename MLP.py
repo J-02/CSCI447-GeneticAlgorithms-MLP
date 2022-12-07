@@ -11,7 +11,7 @@ class MLP:
     def __init__(self, data, nodes, step_size=0.001, momentum=0.5, epochs = 500, weights = None):
         self.data = pd.read_csv("Data/" + data, index_col=0, header=0)  # initializes entire dataset to dataframe
         self.name = data[:-5]
-        self.samples = ds.getSamples(data)  # gets split data
+        self.samples = ds.getSamples(self.data)  # gets split data
         self.train = pd.concat(self.samples[:9])  # creates training data
         self.test = self.samples[9]  # creates test data
         self.weights = weights
@@ -263,6 +263,8 @@ def recall(m):
     r = diag / np.sum(M, axis= 1)  # true positives / TP + false negatives
     return r
 
+glass = MLP("glass.data",[6,6])
+glass.Train()
 
 
 
