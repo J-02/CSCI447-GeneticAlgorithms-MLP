@@ -488,12 +488,26 @@ class Network:
 
         # update the personal bests for all solutions
         def updatePBests(fitness):
+            nonlocal vPb
 
+            pbf = bestF
             # finds where performance was better than personal best
             if self.dataset.classification:
                 updates = np.where(fitness > bestF)
             else:
                 updates = np.where(fitness < bestF)
+
+            if vPb and len(updates[0]) > 0:
+                print("\nUpdating Personal Best of particle: "+str(updates[0][0])+"\n")
+                print("Current Example Particle Fitness:",fitness[updates[0][0]])
+                print("Sample of Current Weights:",self.weights[0][updates[0][0]][:,0])
+                print("Personal Best Fitness:",bestF[updates[0][0]])
+                print("Sample of PB Weights:",bestW[0][updates[0][0]][:,0])
+
+                print("New Personal Best Fitness",fitness[updates[0][0]])
+                print("Sample of New PB Weights:",self.weights[0][updates[0][0]][:,0])
+                vPb = False
+
             # updates pbest fitness
             bestF[updates] = fitness[updates]
 
@@ -503,16 +517,6 @@ class Network:
 
             for idx, i in enumerate(self.bweights):
                 bestBW[idx][:,updates] = i[:,updates]
-
-            if video:
-                print("\nUpdating Personal Best\n")
-                print("Current Example Particle Fitness:",print(fitness[0]))
-                print("Sample of Current Weights:",self.weights[0][0][0,:])
-                print("Personal Best Fitness:",bestF[0])
-                print("Sample of PB Weights:",bestW[0][0][0,:])
-
-                print("New Personal Best Fitness",fitness[0])
-                print("Sample of New PB Weights:",self.weights[0][0][0,:])
 
 
             return
@@ -533,22 +537,24 @@ class Network:
         #update the global best fitness
         def updateGBest(fitness):
 
+            nonlocal vGb
             # finds where, if any the current fitness is greater than the global best
             if self.dataset.classification:
-                update = np.where(np.max(fitness) > gBF)
+                update = np.where(fitness > gBF)
             else:
                 update = np.where(fitness < gBF)
+            big = False
+            if gBF - np.min(fitness) > 1:
+                big = True
 
-            if video:
+            if vGb and len(update[0]) > 0 and big:
                 print("\nUpdating Global Best\n")
                 print("Current Global Best Fitness:",gBF)
-                print("Sample of Current gBest Position:",self.weights[0][gB][0,:])
+                print("Sample of Current gBest Position:",self.weights[0][gB,0,:])
                 print("This Generation's Fitnesses:",fitness)
 
             # if none returns prev global best
             if len(update[0]) == 0:
-                if video:
-                    print("No updates to the Global Best.")
                 return gB, gBF
 
             # if the fitness did improve sets new global best
@@ -561,15 +567,16 @@ class Network:
             # sets global best index
             update = np.where(fitness == newGB)[0][0]
 
-            if video:
-                print("New Global Best Fitness:",update)
-                print("Sample of New gBest position:",self.weights[0][newGB][0,:])
+            if vGb and big:
+                print("New Global Best Fitness:",newGB)
+                print("Sample of New gBest position:",self.weights[0][update][0,:])
+                vGb = False
 
             return update, newGB
 
         # update the velocities of each particle
         def updateVelocities():
-
+            nonlocal vV
             # constriction factor, k = 1 so random walk
 
             phi = c*2
@@ -580,13 +587,14 @@ class Network:
             NewV = [k*(v[idx] + c * r1 *(bestW[idx] - i) + c * r2 *(bestW[idx][gB] - i)) for idx, i in enumerate(self.weights)]
             NewBV = [k*(bv[idx] + c * r1 *(bestBW[idx] - i) + c * r2 *(bestBW[idx][:,gB] -i)) for idx, i in enumerate(self.bweights)]
 
-            if video:
+            if vV and (NewV[0][0] != v[0][0]).all():
                 print("\nVelocity Calculation\n")
                 print("c:",c)
                 print("r1, r2:",r1,"\t",r2)
                 print("k:",k)
                 print("Sample of Previous Velocity Values:",v[0][0][0,:])
                 print("Sample of New Velocity Values:",NewV[0][0][0,:])
+                vV = False
 
             return NewV, NewBV
 
@@ -611,15 +619,16 @@ class Network:
 
         # update the positions of each particle
         def updatePositions(v, bv):
-
-            if video:
+            nonlocal vP
+            if vP and not vV:
                 print("\nUpdating Positions\n")
                 print("Sample of Previous Position:",self.weights[0][0][0,:])
                 print("Sample of Particle Velocity:",v[0][0][0,:])
             self.weights = [i+v[idx] for idx, i in enumerate(self.weights)]
             self.bweights = [i+bv[idx] for idx, i in enumerate(self.bweights)]
-            if video:
+            if vP and not vV:
                 print("New Position:",self.weights[0][0][0,:])
+                vP = False
             return
 
             # --------------------
@@ -641,20 +650,26 @@ class Network:
             return globalBest, globalBestFitness, newV, newBv
 
         def train(x = 500):
-            nonlocal gB, gBF, v, bv
+            nonlocal gB, gBF, v, bv, eval
             gB, gBF = updateGBest(bestF)
             performanceTrain = []
             performanceTrain.append(gBF)
-            for i in range(x):
+            while vPb or vGb or vV or vP or eval:
                 gB, gBF, v, bv = run()
+                x -= 1
+                if x == 0 and eval:
+                    eval = False
+            eval = True
             self.pickWeights(bestF)
 
 
         performance = []
         for i in range(folds):
-            if video:
-                train(x=1)
-            else: train()
+            vPb = video
+            vGb = video
+            vV = video
+            vP = video
+            train()
             perf = self.evaluate(test=True, eval=eval)
             #print("Fold %s: %s" % (i + 1, perf))
             performance.append(perf)
@@ -669,8 +684,13 @@ class Network:
 
 #Sample Outputs from one test fold for one regression, one classification, two hidden layers, all learning methods
 
+
+
 glass = Dataset("glass")
 #Glass dataset
+#Machine dataset
+machine = Dataset("machine")
+
 #GA
 print("Classification: Glass Dataset \n")
 print("Genetic Algorithm")
@@ -687,8 +707,7 @@ output = glass.networks[2].PSO(folds=1, eval=True)
 print("Mean F1, 1 Fold:", output[1])
 
 print("\n\nRegression: Machine Dataset \n")
-#Machine dataset
-machine = Dataset("machine")
+
 #GA
 print("Genetic Algorithm")
 output = machine.networks[2].geneticAlgorithm(.01, .001, folds=1, eval=True)
@@ -716,6 +735,7 @@ glass.networks[2].diffEvo(.005, .005, folds=1, video=True)
 
 #PSO Operations
 print("\n\nParticle Swarm Optimization Operations\n\n")
-glass.networks[2].PSO(folds=1, video=True)
+machine = Dataset("machine")
+machine.networks[2].PSO(folds=1, video=True)
 
 #Average performance over 10 folds for one of the datasets for each of the networks
